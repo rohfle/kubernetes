@@ -1,0 +1,28 @@
+# This file is a template, and might need editing before it works on your project.
+# Official docker image.
+
+build:
+  image: docker:17.05.0
+  #image: dgcr.io/google-containers/kube-cross:v1.8.1-2
+  stage: build
+  script:
+    - apk update
+    - apk add bash tar rsync git
+    - sed -i -e '/ linux\/arm/ s/^/#/' hack/lib/golang.sh 
+    - sed -i -e '/ linux\/s390/ s/^/#/' hack/lib/golang.sh 
+    - sed -i -e '/ linux\/386/ s/^/#/' hack/lib/golang.sh 
+    - sed -i -e '/ linux\/ppc64le/ s/^/#/' hack/lib/golang.sh 
+    - sed -i -e '/ darwin\/amd64/ s/^/#/' hack/lib/golang.sh 
+    - sed -i -e '/ darwin\/386/ s/^/#/' hack/lib/golang.sh 
+    - sed -i -e '/ windows\/386/ s/^/#/' hack/lib/golang.sh 
+    - sed -i -e '/ windows\/amd64/ s/^/#/' hack/lib/golang.sh 
+    - ./build/run.sh make || sleep 99999
+    - ./build/release.sh || sleep 99999
+    - echo time to login to the runner
+    - sleep 99999999
+  artifacts:
+    name: "${CI_JOB_NAME}_${CI_COMMIT_REF_NAME}"
+    untracked: true
+    expire_in: 4 weeks
+    paths:
+      - _output/
