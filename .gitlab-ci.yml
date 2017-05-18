@@ -6,7 +6,8 @@ build:
   #image: dgcr.io/google-containers/kube-cross:v1.8.1-2
   stage: build
   script:
-    - apk update && apk add bash tar rsync git
+    - apk update
+    - apk add bash tar rsync git
     - sed -i -e '/ linux\/arm/ s/^/#/' hack/lib/golang.sh 
     - sed -i -e '/ linux\/s390/ s/^/#/' hack/lib/golang.sh 
     - sed -i -e '/ linux\/386/ s/^/#/' hack/lib/golang.sh 
