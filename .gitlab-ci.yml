@@ -5,7 +5,7 @@ services:
   - docker:dind
 
 build:
-image: gcr.io/google-containers/kube-cross:v1.8.1-2
+  image: gcr.io/google-containers/kube-cross:v1.8.1-2
   stage: build
   script:
     - ./build/run.sh make || sleep 999999
