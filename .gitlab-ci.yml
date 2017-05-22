@@ -13,6 +13,7 @@ before_script:
   - sed -i -e '/ windows\/386/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e '/ windows\/amd64/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e 's/kube::release::package_tarballs//g' ./build/release.sh
+  - sed -i -e 's/make all WHAT/make all -j $(getconf _NPROCESSORS_ONLN) WHAT/g' ./hack/make-rules/cross.sh
 build:
   stage: build
   variables:
@@ -24,7 +25,7 @@ build:
     KUBE_VERBOSE: "0"
     FEREDATION: "false"
   script:
-    - ./build/run.sh make -j $(getconf _NPROCESSORS_ONLN) || sleep 99999
+    - echo ./build/run.sh make -j $(getconf _NPROCESSORS_ONLN) || sleep 99999
     - ./build/release.sh || sleep 99999
     - docker login -u "gitlab-ci-token" -p "$CI_JOB_TOKEN" $CI_REGISTRY
     - docker push "$CI_REGISTRY_IMAGE/hyperkube-amd64:$KUBE_DOCKER_IMAGE_TAG"
