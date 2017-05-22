@@ -13,7 +13,7 @@ before_script:
   - sed -i -e '/ windows\/386/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e '/ windows\/amd64/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e 's/kube::release::package_tarballs//g' ./build/release.sh
-  - sed -i -e 's/make all WHAT/make all -j $(getconf _NPROCESSORS_ONLN) WHAT/g' ./hack/make-rules/cross.sh
+  - echo sed -i -e 's/make all WHAT/make all -j $(getconf _NPROCESSORS_ONLN) WHAT/g' ./hack/make-rules/cross.sh
 build:
   stage: build
   variables:
