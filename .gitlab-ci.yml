@@ -12,7 +12,7 @@ before_script:
   - sed -i -e '/ darwin\/386/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e '/ windows\/386/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e '/ windows\/amd64/ s/^/#/' hack/lib/golang.sh 
-
+  - sed -i -e 's/kube::release::package_tarballs//g' ./build/release.sh
 build:
   stage: build
   variables:
