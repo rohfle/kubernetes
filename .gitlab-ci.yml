@@ -17,7 +17,7 @@ build:
   stage: build
   variables:
     KUBE_DOCKER_REGISTRY: "${CI_REGISTRY_IMAGE}"
-    KUBE_DOCKER_IMAGE_TAG: "${CI_COMMIT_REF}.job.${CI_JOB_ID}"
+    KUBE_DOCKER_IMAGE_TAG: "${CI_COMMIT_REF_SLUG}.job.${CI_JOB_ID}"
     KUBE_RELEASE_RUN_TESTS: "n"
     KUBE_FASTBUILD: "false"
     KUBE_VERBOSE: "0"
@@ -26,6 +26,7 @@ build:
     - ./build/release.sh || sleep 99999
     - docker login -u "gitlab-ci-token" -p "$CI_JOB_TOKEN" $CI_REGISTRY
     - docker push "$CI_REGISTRY_IMAGE/hyperkube-amd64:$KUBE_DOCKER_IMAGE_TAG"
+    - cp -a _output/dockerized/bin/linux/amd64 linux-amd64
     - cat > ci.vars <<EOF
         export TF_VAR_kubelet_image_url="$CI_REGISTRY_IMAGE/hyperkube-amd64"
         export TF_VAR_kubelet_image_tag="$KUBE_DOCKER_IMAGE_TAG"
@@ -35,5 +36,4 @@ build:
     expire_in: 1 weeks
     paths:
       - ci.vars
-      - _output/dockerized
-      - _output/images
+      - linux-amd64
