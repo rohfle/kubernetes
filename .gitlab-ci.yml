@@ -26,7 +26,8 @@ build:
   script:
     - which docker
     - echo $PATH
-    - ./build/run.sh make -j $(getconf _NPROCESSORS_ONLN) release || sleep 99999
+    - ./build/run.sh make release || sleep 99999
+    - echo ./build/run.sh make -j $(getconf _NPROCESSORS_ONLN) release || sleep 99999
     - docker login -u "gitlab-ci-token" -p "$CI_JOB_TOKEN" $CI_REGISTRY
     - docker push "$CI_REGISTRY_IMAGE/hyperkube-amd64:$KUBE_DOCKER_IMAGE_TAG"
     - docker push "$CI_REGISTRY_IMAGE/kube-proxy-amd64:$KUBE_DOCKER_IMAGE_TAG"
