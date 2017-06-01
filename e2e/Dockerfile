@@ -12,3 +12,5 @@ COPY files/ /kubernetes/e2e/
 WORKDIR /kubernetes/e2e
 
 RUN make build-conformance
+
+CMD ["/bin/bash"]
