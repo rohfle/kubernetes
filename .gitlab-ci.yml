@@ -1,7 +1,6 @@
 image: docker:17.05.0
 stages:
   - build
-  - build-e2e
 before_script:
   - apk update
   - apk add bash tar rsync git curl make file
@@ -38,7 +37,7 @@ build:
       - linux-amd64
 
 build-e2e:
-  stage: build-e2e
+  stage: build
   variables:
     KUBE_DOCKER_REGISTRY: "${CI_REGISTRY_IMAGE}"
     KUBE_DOCKER_IMAGE_TAG: "${CI_COMMIT_REF_SLUG}.job.${CI_JOB_ID}"
