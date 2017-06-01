@@ -37,12 +37,12 @@ build:
       - ci.vars
       - linux-amd64
 
-build:
+build-e2e:
   stage: build-e2e
   variables:
     KUBE_DOCKER_REGISTRY: "${CI_REGISTRY_IMAGE}"
     KUBE_DOCKER_IMAGE_TAG: "${CI_COMMIT_REF_SLUG}.job.${CI_JOB_ID}"
   script:
     - docker login -u "gitlab-ci-token" -p "$CI_JOB_TOKEN" $CI_REGISTRY
-    - docker build -t "$CI_REGISTRY_IMAGE/kubernetes-e2e:$KUBE_DOCKER_IMAGE_TAG"./e2e/
+    - docker build -t "$CI_REGISTRY_IMAGE/kubernetes-e2e:$KUBE_DOCKER_IMAGE_TAG" ./e2e/
     - docker push "$CI_REGISTRY_IMAGE/kubernetes-e2e:$KUBE_DOCKER_IMAGE_TAG"
