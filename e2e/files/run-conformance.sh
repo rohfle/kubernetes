@@ -3,7 +3,7 @@
 set -e
 
 # Run conformance test
-export KUBECONFIG=/cncf/data/aws-mvci-stable/kubeconfig
+# export KUBECONFIG=/cncf/data/aws-mvci-stable/kubeconfig
 export KUBERNETES_CONFORMANCE_TEST=y
 export KUBERNETES_PROVIDER=skeleton
 
