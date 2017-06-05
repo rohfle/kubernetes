@@ -17,6 +17,7 @@ limitations under the License.
 package validation
 
 import (
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -892,6 +893,98 @@ func TestValidateKeyToPath(t *testing.T) {
 		} else if !tc.ok {
 			if errs[0].Type != tc.errtype {
 				t.Errorf("[%d] expected error type %v, got %v", i, tc.errtype, errs[0].Type)
+			}
+		}
+	}
+}
+
+func TestValidateNFSVolumeSource(t *testing.T) {
+	testCases := []struct {
+		name      string
+		nfs       *api.NFSVolumeSource
+		errtype   field.ErrorType
+		errfield  string
+		errdetail string
+	}{
+		{
+			name:     "missing server",
+			nfs:      &api.NFSVolumeSource{Server: "", Path: "/tmp"},
+			errtype:  field.ErrorTypeRequired,
+			errfield: "server",
+		},
+		{
+			name:     "missing path",
+			nfs:      &api.NFSVolumeSource{Server: "my-server", Path: ""},
+			errtype:  field.ErrorTypeRequired,
+			errfield: "path",
+		},
+		{
+			name:      "abs path",
+			nfs:       &api.NFSVolumeSource{Server: "my-server", Path: "tmp"},
+			errtype:   field.ErrorTypeInvalid,
+			errfield:  "path",
+			errdetail: "must be an absolute path",
+		},
+	}
+
+	for i, tc := range testCases {
+		errs := validateNFSVolumeSource(tc.nfs, field.NewPath("field"))
+
+		if len(errs) > 0 && tc.errtype == "" {
+			t.Errorf("[%d: %q] unexpected error(s): %v", i, tc.name, errs)
+		} else if len(errs) == 0 && tc.errtype != "" {
+			t.Errorf("[%d: %q] expected error type %v", i, tc.name, tc.errtype)
+		} else if len(errs) >= 1 {
+			if errs[0].Type != tc.errtype {
+				t.Errorf("[%d: %q] expected error type %v, got %v", i, tc.name, tc.errtype, errs[0].Type)
+			} else if !strings.HasSuffix(errs[0].Field, "."+tc.errfield) {
+				t.Errorf("[%d: %q] expected error on field %q, got %q", i, tc.name, tc.errfield, errs[0].Field)
+			} else if !strings.Contains(errs[0].Detail, tc.errdetail) {
+				t.Errorf("[%d: %q] expected error detail %q, got %q", i, tc.name, tc.errdetail, errs[0].Detail)
+			}
+		}
+	}
+}
+
+func TestValidateGlusterfs(t *testing.T) {
+	testCases := []struct {
+		name     string
+		gfs      *api.GlusterfsVolumeSource
+		errtype  field.ErrorType
+		errfield string
+	}{
+		{
+			name:     "missing endpointname",
+			gfs:      &api.GlusterfsVolumeSource{EndpointsName: "", Path: "/tmp"},
+			errtype:  field.ErrorTypeRequired,
+			errfield: "endpoints",
+		},
+		{
+			name:     "missing path",
+			gfs:      &api.GlusterfsVolumeSource{EndpointsName: "my-endpoint", Path: ""},
+			errtype:  field.ErrorTypeRequired,
+			errfield: "path",
+		},
+		{
+			name:     "missing endpintname and path",
+			gfs:      &api.GlusterfsVolumeSource{EndpointsName: "", Path: ""},
+			errtype:  field.ErrorTypeRequired,
+			errfield: "endpoints",
+		},
+	}
+
+	for i, tc := range testCases {
+		errs := validateGlusterfs(tc.gfs, field.NewPath("field"))
+
+		if len(errs) > 0 && tc.errtype == "" {
+			t.Errorf("[%d: %q] unexpected error(s): %v", i, tc.name, errs)
+		} else if len(errs) == 0 && tc.errtype != "" {
+			t.Errorf("[%d: %q] expected error type %v", i, tc.name, tc.errtype)
+		} else if len(errs) >= 1 {
+			if errs[0].Type != tc.errtype {
+				t.Errorf("[%d: %q] expected error type %v, got %v", i, tc.name, tc.errtype, errs[0].Type)
+			} else if !strings.HasSuffix(errs[0].Field, "."+tc.errfield) {
+				t.Errorf("[%d: %q] expected error on field %q, got %q", i, tc.name, tc.errfield, errs[0].Field)
 			}
 		}
 	}
@@ -2281,6 +2374,62 @@ func TestValidateVolumes(t *testing.T) {
 	}
 }
 
+func TestAlphaLocalStorageCapacityIsolation(t *testing.T) {
+
+	testCases := []api.VolumeSource{
+		{EmptyDir: &api.EmptyDirVolumeSource{SizeLimit: *resource.NewQuantity(int64(5), resource.BinarySI)}},
+	}
+	// Enable alpha feature LocalStorageCapacityIsolation
+	err := utilfeature.DefaultFeatureGate.Set("LocalStorageCapacityIsolation=true")
+	if err != nil {
+		t.Errorf("Failed to enable feature gate for LocalStorageCapacityIsolation: %v", err)
+		return
+	}
+	for _, tc := range testCases {
+		if errs := validateVolumeSource(&tc, field.NewPath("spec")); len(errs) != 0 {
+			t.Errorf("expected success: %v", errs)
+		}
+	}
+	// Disable alpha feature LocalStorageCapacityIsolation
+	err = utilfeature.DefaultFeatureGate.Set("LocalStorageCapacityIsolation=false")
+	if err != nil {
+		t.Errorf("Failed to disable feature gate for LocalStorageCapacityIsolation: %v", err)
+		return
+	}
+	for _, tc := range testCases {
+		if errs := validateVolumeSource(&tc, field.NewPath("spec")); len(errs) == 0 {
+			t.Errorf("expected failure: %v", errs)
+		}
+	}
+
+	containerLimitCase := api.ResourceRequirements{
+		Limits: api.ResourceList{
+			api.ResourceStorageOverlay: *resource.NewMilliQuantity(
+				int64(40000),
+				resource.BinarySI),
+		},
+	}
+	// Enable alpha feature LocalStorageCapacityIsolation
+	err = utilfeature.DefaultFeatureGate.Set("LocalStorageCapacityIsolation=true")
+	if err != nil {
+		t.Errorf("Failed to enable feature gate for LocalStorageCapacityIsolation: %v", err)
+		return
+	}
+	if errs := ValidateResourceRequirements(&containerLimitCase, field.NewPath("resources")); len(errs) != 0 {
+		t.Errorf("expected success: %v", errs)
+	}
+	// Disable alpha feature LocalStorageCapacityIsolation
+	err = utilfeature.DefaultFeatureGate.Set("LocalStorageCapacityIsolation=false")
+	if err != nil {
+		t.Errorf("Failed to disable feature gate for LocalStorageCapacityIsolation: %v", err)
+		return
+	}
+	if errs := ValidateResourceRequirements(&containerLimitCase, field.NewPath("resources")); len(errs) == 0 {
+		t.Errorf("expected failure: %v", errs)
+	}
+
+}
+
 func TestValidatePorts(t *testing.T) {
 	successCase := []api.ContainerPort{
 		{Name: "abc", ContainerPort: 80, HostPort: 80, Protocol: "TCP"},
@@ -3350,6 +3499,7 @@ func TestValidateDNSPolicy(t *testing.T) {
 
 func TestValidatePodSpec(t *testing.T) {
 	activeDeadlineSeconds := int64(30)
+	activeDeadlineSecondsMax := int64(math.MaxInt32)
 
 	minUserID := types.UnixUserID(0)
 	maxUserID := types.UnixUserID(2147483647)
@@ -3376,6 +3526,21 @@ func TestValidatePodSpec(t *testing.T) {
 			NodeName:              "foobar",
 			DNSPolicy:             api.DNSClusterFirst,
 			ActiveDeadlineSeconds: &activeDeadlineSeconds,
+			ServiceAccountName:    "acct",
+		},
+		{ // Populate all fields with larger active deadline.
+			Volumes: []api.Volume{
+				{Name: "vol", VolumeSource: api.VolumeSource{EmptyDir: &api.EmptyDirVolumeSource{}}},
+			},
+			Containers:     []api.Container{{Name: "ctr", Image: "image", ImagePullPolicy: "IfNotPresent", TerminationMessagePolicy: "File"}},
+			InitContainers: []api.Container{{Name: "ictr", Image: "iimage", ImagePullPolicy: "IfNotPresent", TerminationMessagePolicy: "File"}},
+			RestartPolicy:  api.RestartPolicyAlways,
+			NodeSelector: map[string]string{
+				"key": "value",
+			},
+			NodeName:              "foobar",
+			DNSPolicy:             api.DNSClusterFirst,
+			ActiveDeadlineSeconds: &activeDeadlineSecondsMax,
 			ServiceAccountName:    "acct",
 		},
 		{ // Populate HostNetwork.
@@ -3450,6 +3615,7 @@ func TestValidatePodSpec(t *testing.T) {
 	}
 
 	activeDeadlineSeconds = int64(0)
+	activeDeadlineSecondsTooLarge := int64(math.MaxInt32 + 1)
 
 	minUserID = types.UnixUserID(-1)
 	maxUserID = types.UnixUserID(2147483648)
@@ -3590,6 +3756,19 @@ func TestValidatePodSpec(t *testing.T) {
 			NodeName:              "foobar",
 			DNSPolicy:             api.DNSClusterFirst,
 			ActiveDeadlineSeconds: &activeDeadlineSeconds,
+		},
+		"active-deadline-seconds-too-large": {
+			Volumes: []api.Volume{
+				{Name: "vol", VolumeSource: api.VolumeSource{EmptyDir: &api.EmptyDirVolumeSource{}}},
+			},
+			Containers:    []api.Container{{Name: "ctr", Image: "image", ImagePullPolicy: "IfNotPresent", TerminationMessagePolicy: "File"}},
+			RestartPolicy: api.RestartPolicyAlways,
+			NodeSelector: map[string]string{
+				"key": "value",
+			},
+			NodeName:              "foobar",
+			DNSPolicy:             api.DNSClusterFirst,
+			ActiveDeadlineSeconds: &activeDeadlineSecondsTooLarge,
 		},
 		"bad nodeName": {
 			NodeName:      "node name",
@@ -6201,7 +6380,7 @@ func TestValidateServiceExternalTrafficFieldsCombination(t *testing.T) {
 			name: "cannot set healthCheckNodePort field on loadBalancer service with externalTrafficPolicy!=Local",
 			tweakSvc: func(s *api.Service) {
 				s.Spec.Type = api.ServiceTypeLoadBalancer
-				s.Spec.ExternalTrafficPolicy = api.ServiceExternalTrafficPolicyTypeGlobal
+				s.Spec.ExternalTrafficPolicy = api.ServiceExternalTrafficPolicyTypeCluster
 				s.Spec.HealthCheckNodePort = 34567
 			},
 			numErrs: 1,
@@ -9217,7 +9396,7 @@ func TestValidateEndpoints(t *testing.T) {
 
 func TestValidateTLSSecret(t *testing.T) {
 	successCases := map[string]api.Secret{
-		"emtpy certificate chain": {
+		"empty certificate chain": {
 			ObjectMeta: metav1.ObjectMeta{Name: "tls-cert", Namespace: "namespace"},
 			Data: map[string][]byte{
 				api.TLSCertKey:       []byte("public key"),

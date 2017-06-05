@@ -141,6 +141,10 @@ var etcdStorageData = map[schema.GroupVersionResource]struct {
 		expectedEtcdPath: "/registry/deployments/etcdstoragepathtestnamespace/deployment2",
 		expectedGVK:      gvkP("extensions", "v1beta1", "Deployment"),
 	},
+	gvr("apps", "v1beta1", "controllerrevisions"): {
+		stub:             `{"metadata":{"name":"crs1"},"data":{"name":"abc","namespace":"default","creationTimestamp":null,"Spec":{"Replicas":0,"Selector":{"matchLabels":{"foo":"bar"}},"Template":{"creationTimestamp":null,"labels":{"foo":"bar"},"Spec":{"Volumes":null,"InitContainers":null,"Containers":null,"RestartPolicy":"Always","TerminationGracePeriodSeconds":null,"ActiveDeadlineSeconds":null,"DNSPolicy":"ClusterFirst","NodeSelector":null,"ServiceAccountName":"","AutomountServiceAccountToken":null,"NodeName":"","SecurityContext":null,"ImagePullSecrets":null,"Hostname":"","Subdomain":"","Affinity":null,"SchedulerName":"","Tolerations":null,"HostAliases":null}},"VolumeClaimTemplates":null,"ServiceName":""},"Status":{"ObservedGeneration":null,"Replicas":0}},"revision":0}`,
+		expectedEtcdPath: "/registry/controllerrevisions/etcdstoragepathtestnamespace/crs1",
+	},
 	// --
 
 	// k8s.io/kubernetes/pkg/apis/autoscaling/v1
@@ -215,6 +219,14 @@ var etcdStorageData = map[schema.GroupVersionResource]struct {
 	},
 	// --
 
+	// k8s.io/kubernetes/pkg/apis/networking/v1
+	gvr("networking.k8s.io", "v1", "networkpolicies"): {
+		stub:             `{"metadata": {"name": "np2"}, "spec": {"podSelector": {"matchLabels": {"e": "f"}}}}`,
+		expectedEtcdPath: "/registry/networkpolicies/etcdstoragepathtestnamespace/np2",
+		expectedGVK:      gvkP("extensions", "v1beta1", "NetworkPolicy"),
+	},
+	// --
+
 	// k8s.io/kubernetes/pkg/apis/policy/v1beta1
 	gvr("policy", "v1beta1", "poddisruptionbudgets"): {
 		stub:             `{"metadata": {"name": "pdb1"}, "spec": {"selector": {"matchLabels": {"anokkey": "anokvalue"}}}}`,
@@ -285,6 +297,16 @@ var etcdStorageData = map[schema.GroupVersionResource]struct {
 		expectedEtcdPath: "/registry/clusterrolebindings/croleb2",
 	},
 	// --
+
+	// k8s.io/kubernetes/pkg/apis/admissionregistration/v1alpha1
+	gvr("admissionregistration.k8s.io", "v1alpha1", "initializerconfigurations"): {
+		stub:             `{"metadata":{"name":"ic1"},"initializers":[{"name":"initializer.k8s.io","rules":[{"apiGroups":["group"],"apiVersions":["version"],"resources":["resource"]}],"failurePolicy":"Ignore"}]}`,
+		expectedEtcdPath: "/registry/initializerconfigurations/ic1",
+	},
+	gvr("admissionregistration.k8s.io", "v1alpha1", "externaladmissionhookconfigurations"): {
+		stub:             `{"metadata":{"name":"hook1","creationTimestamp":null},"externalAdmissionHooks":[{"name":"externaladmissionhook.k8s.io","clientConfig":{"service":{"namespace":"","name":""},"caBundle":null},"rules":[{"operations":["CREATE"],"apiGroups":["group"],"apiVersions":["version"],"resources":["resource"]}],"failurePolicy":"Ignore"}]}`,
+		expectedEtcdPath: "/registry/externaladmissionhookconfigurations/hook1",
+	},
 }
 
 // Be very careful when whitelisting an object as ephemeral.
@@ -358,6 +380,10 @@ var ephemeralWhiteList = createEphemeralWhiteList(
 
 	// k8s.io/kubernetes/pkg/apis/policy/v1beta1
 	gvr("policy", "v1beta1", "evictions"), // not stored in etcd, deals with evicting kapiv1.Pod
+	// --
+
+	// k8s.io/kubernetes/pkg/apis/admission/v1alpha1
+	gvr("admission.k8s.io", "v1alpha1", "admissionreviews"), // not stored in etcd, call out to webhooks.
 	// --
 )
 
@@ -578,14 +604,18 @@ func startRealMasterOrDie(t *testing.T, certDir string) (*allClient, clientv3.KV
 
 			kubeAPIServerOptions.SecureServing.BindPort = kubePort
 
-			kubeAPIServerConfig, sharedInformers, _, err := app.CreateKubeAPIServerConfig(kubeAPIServerOptions)
+			tunneler, proxyTransport, err := app.CreateDialer(kubeAPIServerOptions)
+			if err != nil {
+				t.Fatal(err)
+			}
+			kubeAPIServerConfig, sharedInformers, _, err := app.CreateKubeAPIServerConfig(kubeAPIServerOptions, tunneler, proxyTransport)
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			kubeAPIServerConfig.APIResourceConfigSource = &allResourceSource{} // force enable all resources
 
-			kubeAPIServer, err := app.CreateKubeAPIServer(kubeAPIServerConfig, genericapiserver.EmptyDelegate, sharedInformers)
+			kubeAPIServer, err := app.CreateKubeAPIServer(kubeAPIServerConfig, genericapiserver.EmptyDelegate, sharedInformers, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

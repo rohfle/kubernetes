@@ -689,6 +689,13 @@ span.icon > [class^="icon-"], span.icon > [class*=" icon-"] { cursor: default; }
 <td class="tableblock halign-left valign-top"><p class="tableblock">integer (int32)</p></td>
 <td class="tableblock halign-left valign-top"></td>
 </tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">collisionCount</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Count of hash collisions for the DaemonSet. The DaemonSet controller uses this field as a collision avoidance mechanism when it needs to create the name for the newest ControllerRevision.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">integer (int64)</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
 </tbody>
 </table>
 
@@ -2362,9 +2369,16 @@ When an object is created, the system will populate this list with the current s
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">templateGeneration</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">A sequence number representing a specific generation of the template. Populated by the system. It can be set only during the creation.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DEPRECATED. A sequence number representing a specific generation of the template. Populated by the system. It can be set only during the creation.</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">integer (int64)</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">revisionHistoryLimit</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The number of old history to retain to allow rollback. This is a pointer to distinguish between explicit zero and not specified. Defaults to 10.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">integer (int32)</p></td>
 <td class="tableblock halign-left valign-top"></td>
 </tr>
 </tbody>
@@ -2601,6 +2615,13 @@ When an object is created, the system will populate this list with the current s
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">medium</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">What type of storage medium should back this directory. The default is "" which means to use the node&#8217;s default medium. Must be an empty string (default) or Memory. More info: <a href="https://kubernetes.io/docs/concepts/storage/volumes#emptydir">https://kubernetes.io/docs/concepts/storage/volumes#emptydir</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">sizeLimit</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Total amount of local storage required for this EmptyDir volume. The size limit is also applicable for memory medium. The maximum usage on memory medium EmptyDir would be the minimum value between the SizeLimit specified here and the sum of memory limits of all containers in a pod. The default is nil which means that the limit is undefined. More info: <a href="http://kubernetes.io/docs/user-guide/volumes#emptydir">http://kubernetes.io/docs/user-guide/volumes#emptydir</a></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
 <td class="tableblock halign-left valign-top"></td>
@@ -3007,7 +3028,7 @@ When an object is created, the system will populate this list with the current s
 <tbody>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">revision</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">The revision to rollback to. If set to 0, rollbck to the last revision.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The revision to rollback to. If set to 0, rollback to the last revision.</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">integer (int64)</p></td>
 <td class="tableblock halign-left valign-top"></td>
@@ -5211,6 +5232,9 @@ Examples:<br>
 </div>
 <div class="sect2">
 <h3 id="_v1beta1_networkpolicy">v1beta1.NetworkPolicy</h3>
+<div class="paragraph">
+<p>NetworkPolicy describes what network traffic is allowed for a set of Pods</p>
+</div>
 <table class="tableblock frame-all grid-all" style="width:100%; ">
 <colgroup>
 <col style="width:20%;">
@@ -5466,7 +5490,7 @@ Examples:<br>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">ingress</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">List of ingress rules to be applied to the selected pods. Traffic is allowed to a pod if namespace.networkPolicy.ingress.isolation is undefined and cluster policy allows it, OR if the traffic source is the pod&#8217;s local node, OR if the traffic matches at least one ingress rule across all of the NetworkPolicy objects whose podSelector matches the pod. If this field is empty then this NetworkPolicy does not affect ingress isolation. If this field is present and contains at least one rule, this policy allows any traffic which matches at least one of the ingress rules in this list.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">List of ingress rules to be applied to the selected pods. Traffic is allowed to a pod if there are no NetworkPolicies selecting the pod OR if the traffic source is the pod&#8217;s local node, OR if the traffic matches at least one ingress rule across all of the NetworkPolicy objects whose podSelector matches the pod. If this field is empty then this NetworkPolicy does not allow any traffic (and serves solely to ensure that the pods it selects are isolated by default).</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><a href="#_v1beta1_networkpolicyingressrule">v1beta1.NetworkPolicyIngressRule</a> array</p></td>
 <td class="tableblock halign-left valign-top"></td>
@@ -7652,6 +7676,13 @@ Both these may change in the future. Incoming requests are matched against the h
 <td class="tableblock halign-left valign-top"><p class="tableblock">boolean</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
 </tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">allowedHostPaths</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">AllowedHostPaths is a white list of allowed host path prefixes. Empty indicates that all host paths may be used.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">false</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string array</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
 </tbody>
 </table>
 
@@ -8117,7 +8148,7 @@ Both these may change in the future. Incoming requests are matched against the h
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2017-05-25 09:32:15 UTC
+Last updated 2017-06-01 17:29:53 UTC
 </div>
 </div>
 </body>

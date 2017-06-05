@@ -47,6 +47,7 @@ import (
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
+	genericregistry "k8s.io/apiserver/pkg/registry/generic"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/filters"
 	serverstorage "k8s.io/apiserver/pkg/server/storage"
@@ -57,6 +58,7 @@ import (
 	"k8s.io/kubernetes/pkg/apis/apps"
 	"k8s.io/kubernetes/pkg/apis/batch"
 	"k8s.io/kubernetes/pkg/apis/extensions"
+	"k8s.io/kubernetes/pkg/apis/networking"
 	"k8s.io/kubernetes/pkg/capabilities"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	informers "k8s.io/kubernetes/pkg/client/informers/informers_generated/internalversion"
@@ -100,13 +102,27 @@ cluster's shared state through which all other components interact.`,
 
 // Run runs the specified APIServer.  This should never exit.
 func Run(runOptions *options.ServerRunOptions, stopCh <-chan struct{}) error {
-	kubeAPIServerConfig, sharedInformers, insecureServingOptions, err := CreateKubeAPIServerConfig(runOptions)
+	tunneler, proxyTransport, err := CreateDialer(runOptions)
+	if err != nil {
+		return err
+	}
+	kubeAPIServerConfig, sharedInformers, insecureServingOptions, err := CreateKubeAPIServerConfig(runOptions, tunneler, proxyTransport)
 	if err != nil {
 		return err
 	}
 
-	// kubeAPIServer is at the base for now.  This ensures that CustomResourceDefinitions trump TPRs
-	kubeAPIServer, err := CreateKubeAPIServer(kubeAPIServerConfig, genericapiserver.EmptyDelegate, sharedInformers)
+	// TPRs are enabled and not yet beta, since this these are the successor, they fall under the same enablement rule
+	// If additional API servers are added, they should be gated.
+	apiExtensionsConfig, err := createAPIExtensionsConfig(*kubeAPIServerConfig.GenericConfig, runOptions)
+	if err != nil {
+		return err
+	}
+	apiExtensionsServer, err := createAPIExtensionsServer(apiExtensionsConfig, genericapiserver.EmptyDelegate)
+	if err != nil {
+		return err
+	}
+
+	kubeAPIServer, err := CreateKubeAPIServer(kubeAPIServerConfig, apiExtensionsServer.GenericAPIServer, sharedInformers, apiExtensionsConfig.CRDRESTOptionsGetter)
 	if err != nil {
 		return err
 	}
@@ -128,24 +144,12 @@ func Run(runOptions *options.ServerRunOptions, stopCh <-chan struct{}) error {
 	// this wires up openapi
 	kubeAPIServer.GenericAPIServer.PrepareRun()
 
-	// TPRs are enabled and not yet beta, since this these are the successor, they fall under the same enablement rule
-	// Subsequent API servers in between here and kube-apiserver will need to be gated.
-	// These come first so that if someone registers both a TPR and a CRD, the CRD is preferred.
-	apiExtensionsConfig, err := createAPIExtensionsConfig(*kubeAPIServerConfig.GenericConfig, runOptions)
-	if err != nil {
-		return err
-	}
-	apiExtensionsServer, err := createAPIExtensionsServer(apiExtensionsConfig, kubeAPIServer.GenericAPIServer)
-	if err != nil {
-		return err
-	}
-
 	// aggregator comes last in the chain
 	aggregatorConfig, err := createAggregatorConfig(*kubeAPIServerConfig.GenericConfig, runOptions)
 	if err != nil {
 		return err
 	}
-	aggregatorServer, err := createAggregatorServer(aggregatorConfig, apiExtensionsServer.GenericAPIServer, sharedInformers, apiExtensionsServer.Informers)
+	aggregatorServer, err := createAggregatorServer(aggregatorConfig, kubeAPIServer.GenericAPIServer, sharedInformers, apiExtensionsServer.Informers, proxyTransport)
 	if err != nil {
 		// we don't need special handling for innerStopCh because the aggregator server doesn't create any go routines
 		return err
@@ -162,8 +166,8 @@ func Run(runOptions *options.ServerRunOptions, stopCh <-chan struct{}) error {
 }
 
 // CreateKubeAPIServer creates and wires a workable kube-apiserver
-func CreateKubeAPIServer(kubeAPIServerConfig *master.Config, delegateAPIServer genericapiserver.DelegationTarget, sharedInformers informers.SharedInformerFactory) (*master.Master, error) {
-	kubeAPIServer, err := kubeAPIServerConfig.Complete().New(delegateAPIServer)
+func CreateKubeAPIServer(kubeAPIServerConfig *master.Config, delegateAPIServer genericapiserver.DelegationTarget, sharedInformers informers.SharedInformerFactory, crdRESTOptionsGetter genericregistry.RESTOptionsGetter) (*master.Master, error) {
+	kubeAPIServer, err := kubeAPIServerConfig.Complete().New(delegateAPIServer, crdRESTOptionsGetter)
 	if err != nil {
 		return nil, err
 	}
@@ -175,8 +179,55 @@ func CreateKubeAPIServer(kubeAPIServerConfig *master.Config, delegateAPIServer g
 	return kubeAPIServer, nil
 }
 
+// CreateDialer creates the dialer infrastructure and makes it available to APIServer and Aggregator
+func CreateDialer(s *options.ServerRunOptions) (tunneler.Tunneler, *http.Transport, error) {
+	// Setup nodeTunneler if needed
+	var nodeTunneler tunneler.Tunneler
+	var proxyDialerFn utilnet.DialFunc
+	if len(s.SSHUser) > 0 {
+		// Get ssh key distribution func, if supported
+		var installSSHKey tunneler.InstallSSHKey
+		cloud, err := cloudprovider.InitCloudProvider(s.CloudProvider.CloudProvider, s.CloudProvider.CloudConfigFile)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cloud provider could not be initialized: %v", err)
+		}
+		if cloud != nil {
+			if instances, supported := cloud.Instances(); supported {
+				installSSHKey = instances.AddSSHKeyToAllInstances
+			}
+		}
+		if s.KubeletConfig.Port == 0 {
+			return nil, nil, fmt.Errorf("must enable kubelet port if proxy ssh-tunneling is specified")
+		}
+		if s.KubeletConfig.ReadOnlyPort == 0 {
+			return nil, nil, fmt.Errorf("must enable kubelet readonly port if proxy ssh-tunneling is specified")
+		}
+		// Set up the nodeTunneler
+		// TODO(cjcullen): If we want this to handle per-kubelet ports or other
+		// kubelet listen-addresses, we need to plumb through options.
+		healthCheckPath := &url.URL{
+			Scheme: "http",
+			Host:   net.JoinHostPort("127.0.0.1", strconv.FormatUint(uint64(s.KubeletConfig.ReadOnlyPort), 10)),
+			Path:   "healthz",
+		}
+		nodeTunneler = tunneler.New(s.SSHUser, s.SSHKeyfile, healthCheckPath, installSSHKey)
+
+		// Use the nodeTunneler's dialer to connect to the kubelet
+		s.KubeletConfig.Dial = nodeTunneler.Dial
+		// Use the nodeTunneler's dialer when proxying to pods, services, and nodes
+		proxyDialerFn = nodeTunneler.Dial
+	}
+	// Proxying to pods and services is IP-based... don't expect to be able to verify the hostname
+	proxyTLSClientConfig := &tls.Config{InsecureSkipVerify: true}
+	proxyTransport := utilnet.SetTransportDefaults(&http.Transport{
+		Dial:            proxyDialerFn,
+		TLSClientConfig: proxyTLSClientConfig,
+	})
+	return nodeTunneler, proxyTransport, nil
+}
+
 // CreateKubeAPIServerConfig creates all the resources for running the API server, but runs none of them
-func CreateKubeAPIServerConfig(s *options.ServerRunOptions) (*master.Config, informers.SharedInformerFactory, *kubeserver.InsecureServingInfo, error) {
+func CreateKubeAPIServerConfig(s *options.ServerRunOptions, nodeTunneler tunneler.Tunneler, proxyTransport http.RoundTripper) (*master.Config, informers.SharedInformerFactory, *kubeserver.InsecureServingInfo, error) {
 	// register all admission plugins
 	registerAllAdmissionPlugins(s.Admission.Plugins)
 
@@ -208,49 +259,6 @@ func CreateKubeAPIServerConfig(s *options.ServerRunOptions) (*master.Config, inf
 			HostIPCSources:     []string{},
 		},
 		PerConnectionBandwidthLimitBytesPerSec: s.MaxConnectionBytesPerSec,
-	})
-
-	// Setup nodeTunneler if needed
-	var nodeTunneler tunneler.Tunneler
-	var proxyDialerFn utilnet.DialFunc
-	if len(s.SSHUser) > 0 {
-		// Get ssh key distribution func, if supported
-		var installSSHKey tunneler.InstallSSHKey
-		cloud, err := cloudprovider.InitCloudProvider(s.CloudProvider.CloudProvider, s.CloudProvider.CloudConfigFile)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("cloud provider could not be initialized: %v", err)
-		}
-		if cloud != nil {
-			if instances, supported := cloud.Instances(); supported {
-				installSSHKey = instances.AddSSHKeyToAllInstances
-			}
-		}
-		if s.KubeletConfig.Port == 0 {
-			return nil, nil, nil, fmt.Errorf("must enable kubelet port if proxy ssh-tunneling is specified")
-		}
-		if s.KubeletConfig.ReadOnlyPort == 0 {
-			return nil, nil, nil, fmt.Errorf("must enable kubelet readonly port if proxy ssh-tunneling is specified")
-		}
-		// Set up the nodeTunneler
-		// TODO(cjcullen): If we want this to handle per-kubelet ports or other
-		// kubelet listen-addresses, we need to plumb through options.
-		healthCheckPath := &url.URL{
-			Scheme: "http",
-			Host:   net.JoinHostPort("127.0.0.1", strconv.FormatUint(uint64(s.KubeletConfig.ReadOnlyPort), 10)),
-			Path:   "healthz",
-		}
-		nodeTunneler = tunneler.New(s.SSHUser, s.SSHKeyfile, healthCheckPath, installSSHKey)
-
-		// Use the nodeTunneler's dialer to connect to the kubelet
-		s.KubeletConfig.Dial = nodeTunneler.Dial
-		// Use the nodeTunneler's dialer when proxying to pods, services, and nodes
-		proxyDialerFn = nodeTunneler.Dial
-	}
-	// Proxying to pods and services is IP-based... don't expect to be able to verify the hostname
-	proxyTLSClientConfig := &tls.Config{InsecureSkipVerify: true}
-	proxyTransport := utilnet.SetTransportDefaults(&http.Transport{
-		Dial:            proxyDialerFn,
-		TLSClientConfig: proxyTLSClientConfig,
 	})
 
 	serviceIPRange, apiServerServiceIP, err := master.DefaultServiceIPRange(s.ServiceClusterIPRange)
@@ -425,6 +433,20 @@ func BuildAdmissionPluginInitializer(s *options.ServerRunOptions, client interna
 	quotaRegistry := quotainstall.NewRegistry(nil, nil)
 
 	pluginInitializer := kubeapiserveradmission.NewPluginInitializer(client, sharedInformers, apiAuthorizer, cloudConfig, restMapper, quotaRegistry)
+
+	// Read client cert/key for plugins that need to make calls out
+	if len(s.ProxyClientCertFile) > 0 && len(s.ProxyClientKeyFile) > 0 {
+		certBytes, err := ioutil.ReadFile(s.ProxyClientCertFile)
+		if err != nil {
+			return nil, err
+		}
+		keyBytes, err := ioutil.ReadFile(s.ProxyClientKeyFile)
+		if err != nil {
+			return nil, err
+		}
+		pluginInitializer = pluginInitializer.SetClientCert(certBytes, keyBytes)
+	}
+
 	return pluginInitializer, nil
 }
 
@@ -473,8 +495,9 @@ func BuildStorageFactory(s *options.ServerRunOptions) (*serverstorage.DefaultSto
 		return nil, fmt.Errorf("error in initializing storage factory: %s", err)
 	}
 
-	// keep Deployments in extensions for backwards compatibility, we'll have to migrate at some point, eventually
+	// keep Deployments and NetworkPolicies in extensions for backwards compatibility, we'll have to migrate at some point, eventually
 	storageFactory.AddCohabitatingResources(extensions.Resource("deployments"), apps.Resource("deployments"))
+	storageFactory.AddCohabitatingResources(extensions.Resource("networkpolicies"), networking.Resource("networkpolicies"))
 	for _, override := range s.Etcd.EtcdServersOverrides {
 		tokens := strings.Split(override, "#")
 		if len(tokens) != 2 {
@@ -536,7 +559,7 @@ func defaultOptions(s *options.ServerRunOptions) error {
 		// This is the heuristics that from memory capacity is trying to infer
 		// the maximum number of nodes in the cluster and set cache sizes based
 		// on that value.
-		// From our documentation, we officially recomment 120GB machines for
+		// From our documentation, we officially recommend 120GB machines for
 		// 2000 nodes, and we scale from that point. Thus we assume ~60MB of
 		// capacity per node.
 		// TODO: We may consider deciding that some percentage of memory will

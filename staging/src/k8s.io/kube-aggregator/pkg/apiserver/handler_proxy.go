@@ -18,6 +18,8 @@ package apiserver
 
 import (
 	"context"
+	"fmt"
+	"github.com/golang/glog"
 	"net/http"
 	"net/url"
 	"sync/atomic"
@@ -33,7 +35,6 @@ import (
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
-
 	apiregistrationapi "k8s.io/kube-aggregator/pkg/apis/apiregistration"
 )
 
@@ -49,6 +50,10 @@ type proxyHandler struct {
 	// this to confirm the proxy's identity
 	proxyClientCert []byte
 	proxyClientKey  []byte
+	proxyTransport  *http.Transport
+
+	// Endpoints based routing to map from cluster IP to routable IP
+	routing ServiceResolver
 
 	handlingInfo atomic.Value
 }
@@ -64,8 +69,10 @@ type proxyHandlingInfo struct {
 	transportBuildingError error
 	// proxyRoundTripper is the re-useable portion of the transport.  It does not vary with any request.
 	proxyRoundTripper http.RoundTripper
-	// destinationHost is the hostname of the backing API server
-	destinationHost string
+	// serviceName is the name of the service this handler proxies to
+	serviceName string
+	// namespace is the namespace the service lives in
+	serviceNamespace string
 }
 
 func (r *proxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -88,11 +95,6 @@ func (r *proxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, handlingInfo.transportBuildingError.Error(), http.StatusInternalServerError)
 		return
 	}
-	proxyRoundTripper := handlingInfo.proxyRoundTripper
-	if proxyRoundTripper == nil {
-		http.Error(w, "", http.StatusNotFound)
-		return
-	}
 
 	ctx, ok := r.contextMapper.Get(req)
 	if !ok {
@@ -108,7 +110,12 @@ func (r *proxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// write a new location based on the existing request pointed at the target service
 	location := &url.URL{}
 	location.Scheme = "https"
-	location.Host = handlingInfo.destinationHost
+	rloc, err := r.routing.ResolveEndpoint(handlingInfo.serviceNamespace, handlingInfo.serviceName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("missing route (%s)", err.Error()), http.StatusInternalServerError)
+		return
+	}
+	location.Host = rloc.Host
 	location.Path = req.URL.Path
 	location.RawQuery = req.URL.Query().Encode()
 
@@ -117,9 +124,15 @@ func (r *proxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	newReq.Header = utilnet.CloneHeader(req.Header)
 	newReq.URL = location
 
+	var proxyRoundTripper http.RoundTripper
 	upgrade := false
+	proxyRoundTripper = handlingInfo.proxyRoundTripper
+	if proxyRoundTripper == nil {
+		http.Error(w, "", http.StatusNotFound)
+		return
+	}
 	// we need to wrap the roundtripper in another roundtripper which will apply the front proxy headers
-	proxyRoundTripper, upgrade, err := maybeWrapForConnectionUpgrades(handlingInfo.restConfig, proxyRoundTripper, req)
+	proxyRoundTripper, upgrade, err = maybeWrapForConnectionUpgrades(handlingInfo.restConfig, proxyRoundTripper, req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -175,14 +188,13 @@ func (r *responder) Error(err error) {
 
 // these methods provide locked access to fields
 
-func (r *proxyHandler) updateAPIService(apiService *apiregistrationapi.APIService, destinationHost string) {
+func (r *proxyHandler) updateAPIService(apiService *apiregistrationapi.APIService) {
 	if apiService.Spec.Service == nil {
 		r.handlingInfo.Store(proxyHandlingInfo{local: true})
 		return
 	}
 
 	newInfo := proxyHandlingInfo{
-		destinationHost: destinationHost,
 		restConfig: &restclient.Config{
 			TLSClientConfig: restclient.TLSClientConfig{
 				Insecure:   apiService.Spec.InsecureSkipTLSVerify,
@@ -192,7 +204,18 @@ func (r *proxyHandler) updateAPIService(apiService *apiregistrationapi.APIServic
 				CAData:     apiService.Spec.CABundle,
 			},
 		},
+		serviceName:      apiService.Spec.Service.Name,
+		serviceNamespace: apiService.Spec.Service.Namespace,
 	}
 	newInfo.proxyRoundTripper, newInfo.transportBuildingError = restclient.TransportFor(newInfo.restConfig)
+	if newInfo.transportBuildingError == nil && r.proxyTransport.Dial != nil {
+		switch transport := newInfo.proxyRoundTripper.(type) {
+		case *http.Transport:
+			transport.Dial = r.proxyTransport.Dial
+		default:
+			newInfo.transportBuildingError = fmt.Errorf("Unable to set dialer for %s as rest transport is of type %T", apiService.Spec.Service.Name, newInfo.proxyRoundTripper)
+			glog.Warning(newInfo.transportBuildingError.Error())
+		}
+	}
 	r.handlingInfo.Store(newInfo)
 }

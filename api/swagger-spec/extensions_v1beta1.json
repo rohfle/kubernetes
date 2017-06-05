@@ -7117,7 +7117,12 @@
      "templateGeneration": {
       "type": "integer",
       "format": "int64",
-      "description": "A sequence number representing a specific generation of the template. Populated by the system. It can be set only during the creation."
+      "description": "DEPRECATED. A sequence number representing a specific generation of the template. Populated by the system. It can be set only during the creation."
+     },
+     "revisionHistoryLimit": {
+      "type": "integer",
+      "format": "int32",
+      "description": "The number of old history to retain to allow rollback. This is a pointer to distinguish between explicit zero and not specified. Defaults to 10."
      }
     }
    },
@@ -7435,6 +7440,10 @@
      "medium": {
       "type": "string",
       "description": "What type of storage medium should back this directory. The default is \"\" which means to use the node's default medium. Must be an empty string (default) or Memory. More info: https://kubernetes.io/docs/concepts/storage/volumes#emptydir"
+     },
+     "sizeLimit": {
+      "type": "string",
+      "description": "Total amount of local storage required for this EmptyDir volume. The size limit is also applicable for memory medium. The maximum usage on memory medium EmptyDir would be the minimum value between the SizeLimit specified here and the sum of memory limits of all containers in a pod. The default is nil which means that the limit is undefined. More info: http://kubernetes.io/docs/user-guide/volumes#emptydir"
      }
     }
    },
@@ -9155,6 +9164,11 @@
       "type": "integer",
       "format": "int32",
       "description": "The number of nodes that should be running the daemon pod and have none of the daemon pod running and available (ready for at least spec.minReadySeconds)"
+     },
+     "collisionCount": {
+      "type": "integer",
+      "format": "int64",
+      "description": "Count of hash collisions for the DaemonSet. The DaemonSet controller uses this field as a collision avoidance mechanism when it needs to create the name for the newest ControllerRevision."
      }
     }
    },
@@ -9364,7 +9378,7 @@
      "revision": {
       "type": "integer",
       "format": "int64",
-      "description": "The revision to rollback to. If set to 0, rollbck to the last revision."
+      "description": "The revision to rollback to. If set to 0, rollback to the last revision."
      }
     }
    },
@@ -9765,6 +9779,7 @@
    },
    "v1beta1.NetworkPolicy": {
     "id": "v1beta1.NetworkPolicy",
+    "description": "NetworkPolicy describes what network traffic is allowed for a set of Pods",
     "properties": {
      "kind": {
       "type": "string",
@@ -9799,7 +9814,7 @@
       "items": {
        "$ref": "v1beta1.NetworkPolicyIngressRule"
       },
-      "description": "List of ingress rules to be applied to the selected pods. Traffic is allowed to a pod if namespace.networkPolicy.ingress.isolation is undefined and cluster policy allows it, OR if the traffic source is the pod's local node, OR if the traffic matches at least one ingress rule across all of the NetworkPolicy objects whose podSelector matches the pod. If this field is empty then this NetworkPolicy does not affect ingress isolation. If this field is present and contains at least one rule, this policy allows any traffic which matches at least one of the ingress rules in this list."
+      "description": "List of ingress rules to be applied to the selected pods. Traffic is allowed to a pod if there are no NetworkPolicies selecting the pod OR if the traffic source is the pod's local node, OR if the traffic matches at least one ingress rule across all of the NetworkPolicy objects whose podSelector matches the pod. If this field is empty then this NetworkPolicy does not allow any traffic (and serves solely to ensure that the pods it selects are isolated by default)."
      }
     }
    },
@@ -9983,6 +9998,13 @@
      "readOnlyRootFilesystem": {
       "type": "boolean",
       "description": "ReadOnlyRootFilesystem when set to true will force containers to run with a read only root file system.  If the container specifically requests to run with a non-read only root file system the PSP should deny the pod. If set to false the container may run with a read only root file system if it wishes but it will not be forced to."
+     },
+     "allowedHostPaths": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "AllowedHostPaths is a white list of allowed host path prefixes. Empty indicates that all host paths may be used."
      }
     }
    },

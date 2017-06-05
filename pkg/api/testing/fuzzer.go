@@ -36,6 +36,7 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/testapi"
 	"k8s.io/kubernetes/pkg/api/v1"
+	"k8s.io/kubernetes/pkg/apis/admissionregistration"
 	"k8s.io/kubernetes/pkg/apis/apps"
 	"k8s.io/kubernetes/pkg/apis/autoscaling"
 	"k8s.io/kubernetes/pkg/apis/batch"
@@ -321,7 +322,7 @@ func coreFuncs(t apitesting.TestingCommon) []interface{} {
 			*p = types[c.Rand.Intn(len(types))]
 		},
 		func(p *api.ServiceExternalTrafficPolicyType, c fuzz.Continue) {
-			types := []api.ServiceExternalTrafficPolicyType{api.ServiceExternalTrafficPolicyTypeGlobal, api.ServiceExternalTrafficPolicyTypeLocal}
+			types := []api.ServiceExternalTrafficPolicyType{api.ServiceExternalTrafficPolicyTypeCluster, api.ServiceExternalTrafficPolicyTypeLocal}
 			*p = types[c.Rand.Intn(len(types))]
 		},
 		func(ct *api.Container, c fuzz.Continue) {
@@ -552,6 +553,11 @@ func extensionFuncs(t apitesting.TestingCommon) []interface{} {
 				}
 			}
 		},
+		func(j *extensions.DaemonSetSpec, c fuzz.Continue) {
+			c.FuzzNoCustom(j) // fuzz self without calling this function again
+			rhl := int32(c.Rand.Int31())
+			j.RevisionHistoryLimit = &rhl
+		},
 		func(j *extensions.DaemonSetUpdateStrategy, c fuzz.Continue) {
 			c.FuzzNoCustom(j) // fuzz self without calling this function again
 			// Ensure that strategyType is one of valid values.
@@ -738,6 +744,21 @@ func certificateFuncs(t apitesting.TestingCommon) []interface{} {
 	}
 }
 
+func admissionregistrationFuncs(t apitesting.TestingCommon) []interface{} {
+	return []interface{}{
+		func(obj *admissionregistration.ExternalAdmissionHook, c fuzz.Continue) {
+			c.FuzzNoCustom(obj) // fuzz self without calling this function again
+			p := admissionregistration.FailurePolicyType("Fail")
+			obj.FailurePolicy = &p
+		},
+		func(obj *admissionregistration.Initializer, c fuzz.Continue) {
+			c.FuzzNoCustom(obj) // fuzz self without calling this function again
+			p := admissionregistration.FailurePolicyType("Fail")
+			obj.FailurePolicy = &p
+		},
+	}
+}
+
 func FuzzerFuncs(t apitesting.TestingCommon, codecs runtimeserializer.CodecFactory) []interface{} {
 	return apitesting.MergeFuzzerFuncs(t,
 		apitesting.GenericFuzzerFuncs(t, codecs),
@@ -751,6 +772,7 @@ func FuzzerFuncs(t apitesting.TestingCommon, codecs runtimeserializer.CodecFacto
 		kubeadmfuzzer.KubeadmFuzzerFuncs(t),
 		policyFuncs(t),
 		certificateFuncs(t),
+		admissionregistrationFuncs(t),
 	)
 }
 

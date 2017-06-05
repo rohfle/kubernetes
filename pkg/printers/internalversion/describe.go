@@ -58,6 +58,7 @@ import (
 	"k8s.io/kubernetes/pkg/apis/certificates"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	versionedextension "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
+	"k8s.io/kubernetes/pkg/apis/networking"
 	"k8s.io/kubernetes/pkg/apis/policy"
 	"k8s.io/kubernetes/pkg/apis/rbac"
 	"k8s.io/kubernetes/pkg/apis/storage"
@@ -71,6 +72,7 @@ import (
 	deploymentutil "k8s.io/kubernetes/pkg/controller/deployment/util"
 	"k8s.io/kubernetes/pkg/fieldpath"
 	"k8s.io/kubernetes/pkg/printers"
+	"k8s.io/kubernetes/pkg/registry/rbac/validation"
 	"k8s.io/kubernetes/pkg/util/slice"
 )
 
@@ -132,7 +134,7 @@ func describerMap(c clientset.Interface) map[schema.GroupKind]printers.Describer
 		api.Kind("ConfigMap"):             &ConfigMapDescriber{c},
 
 		extensions.Kind("ReplicaSet"):                  &ReplicaSetDescriber{c},
-		extensions.Kind("NetworkPolicy"):               &NetworkPolicyDescriber{c},
+		extensions.Kind("NetworkPolicy"):               &ExtensionsNetworkPolicyDescriber{c},
 		autoscaling.Kind("HorizontalPodAutoscaler"):    &HorizontalPodAutoscalerDescriber{c},
 		extensions.Kind("DaemonSet"):                   &DaemonSetDescriber{c},
 		extensions.Kind("Deployment"):                  &DeploymentDescriber{c, versionedClientsetForDeployment(c)},
@@ -144,8 +146,11 @@ func describerMap(c clientset.Interface) map[schema.GroupKind]printers.Describer
 		certificates.Kind("CertificateSigningRequest"): &CertificateSigningRequestDescriber{c},
 		storage.Kind("StorageClass"):                   &StorageClassDescriber{c},
 		policy.Kind("PodDisruptionBudget"):             &PodDisruptionBudgetDescriber{c},
+		rbac.Kind("Role"):                              &RoleDescriber{c},
+		rbac.Kind("ClusterRole"):                       &ClusterRoleDescriber{c},
 		rbac.Kind("RoleBinding"):                       &RoleBindingDescriber{c},
 		rbac.Kind("ClusterRoleBinding"):                &ClusterRoleBindingDescriber{c},
+		networking.Kind("NetworkPolicy"):               &NetworkPolicyDescriber{c},
 	}
 
 	return m
@@ -735,6 +740,8 @@ func describeVolumes(volumes []api.Volume, w PrefixWriter, space string) {
 			printPortworxVolumeSource(volume.VolumeSource.PortworxVolume, w)
 		case volume.VolumeSource.ScaleIO != nil:
 			printScaleIOVolumeSource(volume.VolumeSource.ScaleIO, w)
+		case volume.VolumeSource.CephFS != nil:
+			printCephFSVolumeSource(volume.VolumeSource.CephFS, w)
 		default:
 			w.Write(LEVEL_1, "<unknown>\n")
 		}
@@ -922,6 +929,17 @@ func printLocalVolumeSource(ls *api.LocalVolumeSource, w PrefixWriter) {
 		ls.Path)
 }
 
+func printCephFSVolumeSource(cephfs *api.CephFSVolumeSource, w PrefixWriter) {
+	w.Write(LEVEL_2, "Type:\tCephFS (a CephFS mount on the host that shares a pod's lifetime)\n"+
+		"    Monitors:\t%v\n"+
+		"    Path:\t%v\n"+
+		"    User:\t%v\n"+
+		"    SecretFile:\t%v\n"+
+		"    SecretRef:\t%v\n"+
+		"    ReadOnly:\t%v\n",
+		cephfs.Monitors, cephfs.Path, cephfs.User, cephfs.SecretFile, cephfs.SecretRef, cephfs.ReadOnly)
+}
+
 type PersistentVolumeDescriber struct {
 	clientset.Interface
 }
@@ -993,6 +1011,8 @@ func describePersistentVolume(pv *api.PersistentVolume, events *api.EventList) (
 			printScaleIOVolumeSource(pv.Spec.ScaleIO, w)
 		case pv.Spec.Local != nil:
 			printLocalVolumeSource(pv.Spec.Local, w)
+		case pv.Spec.CephFS != nil:
+			printCephFSVolumeSource(pv.Spec.CephFS, w)
 		}
 
 		if events != nil {
@@ -2114,6 +2134,101 @@ func describeServiceAccount(serviceAccount *api.ServiceAccount, tokens []api.Sec
 	})
 }
 
+// RoleDescriber generates information about a node.
+type RoleDescriber struct {
+	clientset.Interface
+}
+
+func (d *RoleDescriber) Describe(namespace, name string, describerSettings printers.DescriberSettings) (string, error) {
+	role, err := d.Rbac().Roles(namespace).Get(name, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+
+	breakdownRules := []rbac.PolicyRule{}
+	for _, rule := range role.Rules {
+		breakdownRules = append(breakdownRules, validation.BreakdownRule(rule)...)
+	}
+
+	compactRules, err := validation.CompactRules(breakdownRules)
+	if err != nil {
+		return "", err
+	}
+	sort.Stable(rbac.SortableRuleSlice(compactRules))
+
+	return tabbedString(func(out io.Writer) error {
+		w := NewPrefixWriter(out)
+		w.Write(LEVEL_0, "Name:\t%s\n", role.Name)
+		printLabelsMultiline(w, "Labels", role.Labels)
+		printAnnotationsMultiline(w, "Annotations", role.Annotations)
+
+		w.Write(LEVEL_0, "PolicyRule:\n")
+		w.Write(LEVEL_1, "Resources\tNon-Resource URLs\tResource Names\tVerbs\n")
+		w.Write(LEVEL_1, "---------\t-----------------\t--------------\t-----\n")
+		for _, r := range compactRules {
+			w.Write(LEVEL_1, "%s\t%v\t%v\t%v\n", combineResourceGroup(r.Resources, r.APIGroups), r.NonResourceURLs, r.ResourceNames, r.Verbs)
+		}
+
+		return nil
+	})
+}
+
+// ClusterRoleDescriber generates information about a node.
+type ClusterRoleDescriber struct {
+	clientset.Interface
+}
+
+func (d *ClusterRoleDescriber) Describe(namespace, name string, describerSettings printers.DescriberSettings) (string, error) {
+	role, err := d.Rbac().ClusterRoles().Get(name, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+
+	breakdownRules := []rbac.PolicyRule{}
+	for _, rule := range role.Rules {
+		breakdownRules = append(breakdownRules, validation.BreakdownRule(rule)...)
+	}
+
+	compactRules, err := validation.CompactRules(breakdownRules)
+	if err != nil {
+		return "", err
+	}
+	sort.Stable(rbac.SortableRuleSlice(compactRules))
+
+	return tabbedString(func(out io.Writer) error {
+		w := NewPrefixWriter(out)
+		w.Write(LEVEL_0, "Name:\t%s\n", role.Name)
+		printLabelsMultiline(w, "Labels", role.Labels)
+		printAnnotationsMultiline(w, "Annotations", role.Annotations)
+
+		w.Write(LEVEL_0, "PolicyRule:\n")
+		w.Write(LEVEL_1, "Resources\tNon-Resource URLs\tResource Names\tVerbs\n")
+		w.Write(LEVEL_1, "---------\t-----------------\t--------------\t-----\n")
+		for _, r := range compactRules {
+			w.Write(LEVEL_1, "%s\t%v\t%v\t%v\n", combineResourceGroup(r.Resources, r.APIGroups), r.NonResourceURLs, r.ResourceNames, r.Verbs)
+		}
+
+		return nil
+	})
+}
+
+func combineResourceGroup(resource, group []string) string {
+	if len(resource) == 0 {
+		return ""
+	}
+	parts := strings.SplitN(resource[0], "/", 2)
+	combine := parts[0]
+
+	if len(group) > 0 && group[0] != "" {
+		combine = combine + "." + group[0]
+	}
+
+	if len(parts) == 2 {
+		combine = combine + "/" + parts[1]
+	}
+	return combine
+}
+
 // RoleBindingDescriber generates information about a node.
 type RoleBindingDescriber struct {
 	clientset.Interface
@@ -2797,13 +2912,41 @@ func describeCluster(cluster *federation.Cluster) (string, error) {
 	})
 }
 
-// NetworkPolicyDescriber generates information about a NetworkPolicy
+// ExtensionsNetworkPolicyDescriber generates information about an extensions.NetworkPolicy
+type ExtensionsNetworkPolicyDescriber struct {
+	clientset.Interface
+}
+
+func (d *ExtensionsNetworkPolicyDescriber) Describe(namespace, name string, describerSettings printers.DescriberSettings) (string, error) {
+	c := d.Extensions().NetworkPolicies(namespace)
+
+	networkPolicy, err := c.Get(name, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+
+	return describeExtensionsNetworkPolicy(networkPolicy)
+}
+
+func describeExtensionsNetworkPolicy(networkPolicy *extensions.NetworkPolicy) (string, error) {
+	return tabbedString(func(out io.Writer) error {
+		w := NewPrefixWriter(out)
+		w.Write(LEVEL_0, "Name:\t%s\n", networkPolicy.Name)
+		w.Write(LEVEL_0, "Namespace:\t%s\n", networkPolicy.Namespace)
+		printLabelsMultiline(w, "Labels", networkPolicy.Labels)
+		printAnnotationsMultiline(w, "Annotations", networkPolicy.Annotations)
+
+		return nil
+	})
+}
+
+// NetworkPolicyDescriber generates information about a networking.NetworkPolicy
 type NetworkPolicyDescriber struct {
 	clientset.Interface
 }
 
 func (d *NetworkPolicyDescriber) Describe(namespace, name string, describerSettings printers.DescriberSettings) (string, error) {
-	c := d.Extensions().NetworkPolicies(namespace)
+	c := d.Networking().NetworkPolicies(namespace)
 
 	networkPolicy, err := c.Get(name, metav1.GetOptions{})
 	if err != nil {
@@ -2813,7 +2956,7 @@ func (d *NetworkPolicyDescriber) Describe(namespace, name string, describerSetti
 	return describeNetworkPolicy(networkPolicy)
 }
 
-func describeNetworkPolicy(networkPolicy *extensions.NetworkPolicy) (string, error) {
+func describeNetworkPolicy(networkPolicy *networking.NetworkPolicy) (string, error) {
 	return tabbedString(func(out io.Writer) error {
 		w := NewPrefixWriter(out)
 		w.Write(LEVEL_0, "Name:\t%s\n", networkPolicy.Name)

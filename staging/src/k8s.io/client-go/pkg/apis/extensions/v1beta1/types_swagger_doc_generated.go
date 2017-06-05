@@ -77,12 +77,13 @@ func (DaemonSetList) SwaggerDoc() map[string]string {
 }
 
 var map_DaemonSetSpec = map[string]string{
-	"":                   "DaemonSetSpec is the specification of a daemon set.",
-	"selector":           "A label query over pods that are managed by the daemon set. Must match in order to be controlled. If empty, defaulted to labels on Pod template. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors",
-	"template":           "An object that describes the pod that will be created. The DaemonSet will create exactly one copy of this pod on every node that matches the template's node selector (or on every node if no node selector is specified). More info: https://kubernetes.io/docs/concepts/workloads/controllers/replicationcontroller#pod-template",
-	"updateStrategy":     "An update strategy to replace existing DaemonSet pods with new pods.",
-	"minReadySeconds":    "The minimum number of seconds for which a newly created DaemonSet pod should be ready without any of its container crashing, for it to be considered available. Defaults to 0 (pod will be considered available as soon as it is ready).",
-	"templateGeneration": "A sequence number representing a specific generation of the template. Populated by the system. It can be set only during the creation.",
+	"":                     "DaemonSetSpec is the specification of a daemon set.",
+	"selector":             "A label query over pods that are managed by the daemon set. Must match in order to be controlled. If empty, defaulted to labels on Pod template. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors",
+	"template":             "An object that describes the pod that will be created. The DaemonSet will create exactly one copy of this pod on every node that matches the template's node selector (or on every node if no node selector is specified). More info: https://kubernetes.io/docs/concepts/workloads/controllers/replicationcontroller#pod-template",
+	"updateStrategy":       "An update strategy to replace existing DaemonSet pods with new pods.",
+	"minReadySeconds":      "The minimum number of seconds for which a newly created DaemonSet pod should be ready without any of its container crashing, for it to be considered available. Defaults to 0 (pod will be considered available as soon as it is ready).",
+	"templateGeneration":   "DEPRECATED. A sequence number representing a specific generation of the template. Populated by the system. It can be set only during the creation.",
+	"revisionHistoryLimit": "The number of old history to retain to allow rollback. This is a pointer to distinguish between explicit zero and not specified. Defaults to 10.",
 }
 
 func (DaemonSetSpec) SwaggerDoc() map[string]string {
@@ -99,6 +100,7 @@ var map_DaemonSetStatus = map[string]string{
 	"updatedNumberScheduled": "The total number of nodes that are running updated daemon pod",
 	"numberAvailable":        "The number of nodes that should be running the daemon pod and have one or more of the daemon pod running and available (ready for at least spec.minReadySeconds)",
 	"numberUnavailable":      "The number of nodes that should be running the daemon pod and have none of the daemon pod running and available (ready for at least spec.minReadySeconds)",
+	"collisionCount":         "Count of hash collisions for the DaemonSet. The DaemonSet controller uses this field as a collision avoidance mechanism when it needs to create the name for the newest ControllerRevision.",
 }
 
 func (DaemonSetStatus) SwaggerDoc() map[string]string {
@@ -331,6 +333,7 @@ func (IngressTLS) SwaggerDoc() map[string]string {
 }
 
 var map_NetworkPolicy = map[string]string{
+	"":         "NetworkPolicy describes what network traffic is allowed for a set of Pods",
 	"metadata": "Standard object's metadata. More info: https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#metadata",
 	"spec":     "Specification of the desired behavior for this NetworkPolicy.",
 }
@@ -379,7 +382,7 @@ func (NetworkPolicyPort) SwaggerDoc() map[string]string {
 
 var map_NetworkPolicySpec = map[string]string{
 	"podSelector": "Selects the pods to which this NetworkPolicy object applies.  The array of ingress rules is applied to any pods selected by this field. Multiple network policies can select the same set of pods.  In this case, the ingress rules for each are combined additively. This field is NOT optional and follows standard label selector semantics. An empty podSelector matches all pods in this namespace.",
-	"ingress":     "List of ingress rules to be applied to the selected pods. Traffic is allowed to a pod if namespace.networkPolicy.ingress.isolation is undefined and cluster policy allows it, OR if the traffic source is the pod's local node, OR if the traffic matches at least one ingress rule across all of the NetworkPolicy objects whose podSelector matches the pod. If this field is empty then this NetworkPolicy does not affect ingress isolation. If this field is present and contains at least one rule, this policy allows any traffic which matches at least one of the ingress rules in this list.",
+	"ingress":     "List of ingress rules to be applied to the selected pods. Traffic is allowed to a pod if there are no NetworkPolicies selecting the pod OR if the traffic source is the pod's local node, OR if the traffic matches at least one ingress rule across all of the NetworkPolicy objects whose podSelector matches the pod. If this field is empty then this NetworkPolicy does not allow any traffic (and serves solely to ensure that the pods it selects are isolated by default).",
 }
 
 func (NetworkPolicySpec) SwaggerDoc() map[string]string {
@@ -422,6 +425,7 @@ var map_PodSecurityPolicySpec = map[string]string{
 	"supplementalGroups":       "SupplementalGroups is the strategy that will dictate what supplemental groups are used by the SecurityContext.",
 	"fsGroup":                  "FSGroup is the strategy that will dictate what fs group is used by the SecurityContext.",
 	"readOnlyRootFilesystem":   "ReadOnlyRootFilesystem when set to true will force containers to run with a read only root file system.  If the container specifically requests to run with a non-read only root file system the PSP should deny the pod. If set to false the container may run with a read only root file system if it wishes but it will not be forced to.",
+	"allowedHostPaths":         "AllowedHostPaths is a white list of allowed host path prefixes. Empty indicates that all host paths may be used.",
 }
 
 func (PodSecurityPolicySpec) SwaggerDoc() map[string]string {
@@ -497,7 +501,7 @@ func (ReplicationControllerDummy) SwaggerDoc() map[string]string {
 }
 
 var map_RollbackConfig = map[string]string{
-	"revision": "The revision to rollback to. If set to 0, rollbck to the last revision.",
+	"revision": "The revision to rollback to. If set to 0, rollback to the last revision.",
 }
 
 func (RollbackConfig) SwaggerDoc() map[string]string {

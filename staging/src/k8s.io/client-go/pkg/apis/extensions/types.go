@@ -235,7 +235,7 @@ type DeploymentRollback struct {
 }
 
 type RollbackConfig struct {
-	// The revision to rollback to. If set to 0, rollbck to the last revision.
+	// The revision to rollback to. If set to 0, rollback to the last revision.
 	// +optional
 	Revision int64
 }
@@ -386,7 +386,7 @@ type DaemonSetUpdateStrategy struct {
 	// Rolling update config params. Present only if type = "RollingUpdate".
 	//---
 	// TODO: Update this to follow our convention for oneOf, whatever we decide it
-	// to be. Same as DeploymentStrategy.RollingUpdate.
+	// to be. Same as Deployment `strategy.rollingUpdate`.
 	// See https://github.com/kubernetes/kubernetes/issues/35345
 	// +optional
 	RollingUpdate *RollingUpdateDaemonSet
@@ -449,10 +449,17 @@ type DaemonSetSpec struct {
 	// +optional
 	MinReadySeconds int32
 
+	// DEPRECATED.
 	// A sequence number representing a specific generation of the template.
 	// Populated by the system. It can be set only during the creation.
 	// +optional
 	TemplateGeneration int64
+
+	// The number of old history to retain to allow rollback.
+	// This is a pointer to distinguish between explicit zero and not specified.
+	// Defaults to 10.
+	// +optional
+	RevisionHistoryLimit *int32
 }
 
 // DaemonSetStatus represents the current status of a daemon set.
@@ -492,6 +499,12 @@ type DaemonSetStatus struct {
 	// (ready for at least spec.minReadySeconds)
 	// +optional
 	NumberUnavailable int32
+
+	// Count of hash collisions for the DaemonSet. The DaemonSet controller
+	// uses this field as a collision avoidance mechanism when it needs to
+	// create the name for the newest ControllerRevision.
+	// +optional
+	CollisionCount *int64
 }
 
 // +genclient=true
@@ -519,10 +532,16 @@ type DaemonSet struct {
 }
 
 const (
+	// DEPRECATED: DefaultDaemonSetUniqueLabelKey is used instead.
 	// DaemonSetTemplateGenerationKey is the key of the labels that is added
 	// to daemon set pods to distinguish between old and new pod templates
 	// during DaemonSet template update.
 	DaemonSetTemplateGenerationKey string = "pod-template-generation"
+
+	// DefaultDaemonSetUniqueLabelKey is the default label key that is added
+	// to existing DaemonSet pods to distinguish between old and new
+	// DaemonSet pods during DaemonSet template updates.
+	DefaultDaemonSetUniqueLabelKey string = "daemonset-controller-hash"
 )
 
 // DaemonSetList is a collection of daemon sets.
@@ -884,6 +903,10 @@ type PodSecurityPolicySpec struct {
 	// will not be forced to.
 	// +optional
 	ReadOnlyRootFilesystem bool
+	// AllowedHostPaths is a white list of allowed host path prefixes. Empty indicates that all
+	// host paths may be used.
+	// +optional
+	AllowedHostPaths []string
 }
 
 // HostPortRange defines a range of host ports that will be enabled by a policy
@@ -1042,6 +1065,7 @@ type PodSecurityPolicyList struct {
 
 // +genclient=true
 
+// NetworkPolicy describes what network traffic is allowed for a set of Pods
 type NetworkPolicy struct {
 	metav1.TypeMeta
 	// +optional
@@ -1061,13 +1085,12 @@ type NetworkPolicySpec struct {
 	PodSelector metav1.LabelSelector
 
 	// List of ingress rules to be applied to the selected pods.
-	// Traffic is allowed to a pod if namespace.networkPolicy.ingress.isolation is undefined and cluster policy allows it,
+	// Traffic is allowed to a pod if there are no NetworkPolicies selecting the pod
 	// OR if the traffic source is the pod's local node,
 	// OR if the traffic matches at least one ingress rule across all of the NetworkPolicy
 	// objects whose podSelector matches the pod.
-	// If this field is empty then this NetworkPolicy does not affect ingress isolation.
-	// If this field is present and contains at least one rule, this policy allows any traffic
-	// which matches at least one of the ingress rules in this list.
+	// If this field is empty then this NetworkPolicy does not allow any traffic
+	// (and serves solely to ensure that the pods it selects are isolated by default).
 	// +optional
 	Ingress []NetworkPolicyIngressRule
 }

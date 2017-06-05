@@ -247,13 +247,9 @@ func (r *crdHandler) removeDeadStorage() {
 
 // GetCustomResourceListerCollectionDeleter returns the ListerCollectionDeleter for
 // the given uid, or nil if one does not exist.
-func (r *crdHandler) GetCustomResourceListerCollectionDeleter(uid types.UID) finalizer.ListerCollectionDeleter {
-	storageMap := r.customStorage.Load().(crdStorageMap)
-	ret, ok := storageMap[uid]
-	if !ok {
-		return nil
-	}
-	return ret.storage
+func (r *crdHandler) GetCustomResourceListerCollectionDeleter(crd *apiextensions.CustomResourceDefinition) finalizer.ListerCollectionDeleter {
+	info := r.getServingInfoFor(crd)
+	return info.storage
 }
 
 func (r *crdHandler) getServingInfoFor(crd *apiextensions.CustomResourceDefinition) *crdInfo {
@@ -278,6 +274,17 @@ func (r *crdHandler) getServingInfoFor(crd *apiextensions.CustomResourceDefiniti
 		customresource.NewStrategy(discovery.NewUnstructuredObjectTyper(nil), crd.Spec.Scope == apiextensions.NamespaceScoped),
 		r.restOptionsGetter,
 	)
+
+	// When new REST storage is created, the storage cacher for the CR starts asynchronously.
+	// REST API operations return like list use the RV of etcd, but the storage cacher's reflector's list
+	// can get a different RV because etcd can be touched in between the initial list operation (if that's what you're doing first)
+	// and the storage cache reflector starting.
+	// Later, you can issue a watch with the REST apis list.RV and end up earlier than the storage cacher.
+	// The time window is really narrow, but it can happen.  The simplest "solution" is to wait
+	// briefly for the storage cache to start before we return out new storage so its more likely that we'll have valid
+	// resource versions for the watch cache.  We don't expose cache status outside of the caching layer
+	// so I can't think of way to determine it reliably.
+	time.Sleep(1 * time.Second)
 
 	parameterScheme := runtime.NewScheme()
 	parameterScheme.AddUnversionedTypes(schema.GroupVersion{Group: crd.Spec.Group, Version: crd.Spec.Version},

@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1alpha1 "k8s.io/apimachinery/pkg/apis/meta/v1alpha1"
 	"k8s.io/apimachinery/pkg/conversion/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -65,6 +66,8 @@ type RequestScope struct {
 	Typer           runtime.ObjectTyper
 	UnsafeConvertor runtime.ObjectConvertor
 
+	TableConvertor rest.TableConvertor
+
 	Resource    schema.GroupVersionResource
 	Kind        schema.GroupVersionKind
 	Subresource string
@@ -75,6 +78,30 @@ type RequestScope struct {
 func (scope *RequestScope) err(err error, w http.ResponseWriter, req *http.Request) {
 	ctx := scope.ContextFunc(req)
 	responsewriters.ErrorNegotiated(ctx, err, scope.Serializer, scope.Kind.GroupVersion(), w, req)
+}
+
+func (scope *RequestScope) AllowsConversion(gvk schema.GroupVersionKind) bool {
+	// TODO: this is temporary, replace with an abstraction calculated at endpoint installation time
+	if gvk.GroupVersion() == metav1alpha1.SchemeGroupVersion {
+		switch gvk.Kind {
+		case "Table":
+			return scope.TableConvertor != nil
+		case "PartialObjectMetadata", "PartialObjectMetadataList":
+			// TODO: should delineate between lists and non-list endpoints
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+func (scope *RequestScope) AllowsServerVersion(version string) bool {
+	return version == scope.MetaGroupVersion.Version
+}
+
+func (scope *RequestScope) AllowsStreamSchema(s string) bool {
+	return s == "watch"
 }
 
 // getterFunc performs a get request with the given context and object name. The request
@@ -115,7 +142,7 @@ func getResourceHandler(scope RequestScope, getter getterFunc) http.HandlerFunc 
 		}
 
 		trace.Step("About to write a response")
-		responsewriters.WriteObject(ctx, http.StatusOK, scope.Kind.GroupVersion(), scope.Serializer, result, w, req)
+		transformResponseObject(ctx, scope, req, w, http.StatusOK, result)
 	}
 }
 
@@ -301,7 +328,11 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope RequestScope, forceWatch
 			opts.FieldSelector = nameSelector
 		}
 
-		if (opts.Watch || forceWatch) && rw != nil {
+		if opts.Watch || forceWatch {
+			if rw == nil {
+				scope.err(errors.NewMethodNotSupported(scope.Resource.GroupResource(), "watch"), w, req)
+				return
+			}
 			// TODO: Currently we explicitly ignore ?timeout= and use only ?timeoutSeconds=.
 			timeout := time.Duration(0)
 			if opts.TimeoutSeconds != nil {
@@ -344,7 +375,7 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope RequestScope, forceWatch
 			}
 		}
 
-		responsewriters.WriteObject(ctx, http.StatusOK, scope.Kind.GroupVersion(), scope.Serializer, result, w, req)
+		transformResponseObject(ctx, scope, req, w, http.StatusOK, result)
 		trace.Step(fmt.Sprintf("Writing http response done (%d items)", numberOfItems))
 	}
 }
@@ -418,13 +449,12 @@ func createHandler(r rest.NamedCreater, scope RequestScope, typer runtime.Object
 			}
 		}
 
+		// TODO: replace with content type negotiation?
+		includeUninitialized := req.URL.Query().Get("includeUninitialized") == "1"
+
 		trace.Step("About to store object in database")
 		result, err := finishRequest(timeout, func() (runtime.Object, error) {
-			out, err := r.Create(ctx, name, obj)
-			if status, ok := out.(*metav1.Status); ok && err == nil && status.Code == 0 {
-				status.Code = http.StatusCreated
-			}
-			return out, err
+			return r.Create(ctx, name, obj, includeUninitialized)
 		})
 		if err != nil {
 			scope.err(err, w, req)
@@ -443,7 +473,19 @@ func createHandler(r rest.NamedCreater, scope RequestScope, typer runtime.Object
 		}
 		trace.Step("Self-link added")
 
-		responsewriters.WriteObject(ctx, http.StatusCreated, scope.Kind.GroupVersion(), scope.Serializer, result, w, req)
+		// If the object is partially initialized, always indicate it via StatusAccepted
+		code := http.StatusCreated
+		if accessor, err := meta.Accessor(result); err == nil {
+			if accessor.GetInitializers() != nil {
+				code = http.StatusAccepted
+			}
+		}
+		status, ok := result.(*metav1.Status)
+		if ok && err == nil && status.Code == 0 {
+			status.Code = int32(code)
+		}
+
+		transformResponseObject(ctx, scope, req, w, code, result)
 	}
 }
 
@@ -461,8 +503,8 @@ type namedCreaterAdapter struct {
 	rest.Creater
 }
 
-func (c *namedCreaterAdapter) Create(ctx request.Context, name string, obj runtime.Object) (runtime.Object, error) {
-	return c.Creater.Create(ctx, obj)
+func (c *namedCreaterAdapter) Create(ctx request.Context, name string, obj runtime.Object, includeUninitialized bool) (runtime.Object, error) {
+	return c.Creater.Create(ctx, obj, includeUninitialized)
 }
 
 // PatchResource returns a function that will handle a resource patch
@@ -543,9 +585,8 @@ func PatchResource(r rest.Patcher, scope RequestScope, admit admission.Interface
 			return
 		}
 
-		responsewriters.WriteObject(ctx, http.StatusOK, scope.Kind.GroupVersion(), scope.Serializer, result, w, req)
+		transformResponseObject(ctx, scope, req, w, http.StatusOK, result)
 	}
-
 }
 
 type updateAdmissionFunc func(updatedObject runtime.Object, currentObject runtime.Object) error
@@ -873,7 +914,8 @@ func UpdateResource(r rest.Updater, scope RequestScope, typer runtime.ObjectType
 		if wasCreated {
 			status = http.StatusCreated
 		}
-		responsewriters.WriteObject(ctx, status, scope.Kind.GroupVersion(), scope.Serializer, result, w, req)
+
+		transformResponseObject(ctx, scope, req, w, status, result)
 	}
 }
 
@@ -992,7 +1034,7 @@ func DeleteResource(r rest.GracefulDeleter, allowsOptions bool, scope RequestSco
 			}
 		}
 
-		responsewriters.WriteObject(ctx, status, scope.Kind.GroupVersion(), scope.Serializer, result, w, req)
+		transformResponseObject(ctx, scope, req, w, status, result)
 	}
 }
 
@@ -1098,7 +1140,7 @@ func DeleteCollection(r rest.CollectionDeleter, checkBody bool, scope RequestSco
 			}
 		}
 
-		responsewriters.WriteObjectNegotiated(ctx, scope.Serializer, scope.Kind.GroupVersion(), w, req, http.StatusOK, result)
+		transformResponseObject(ctx, scope, req, w, http.StatusOK, result)
 	}
 }
 

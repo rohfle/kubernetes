@@ -62,6 +62,8 @@ const (
 	// The stage for events generated once the response body has been completed, and no more bytes
 	// will be sent.
 	StageResponseComplete = "ResponseComplete"
+	// The stage for events generated when a panic occured.
+	StagePanic = "Panic"
 )
 
 // Event captures all the information that can be included in an API audit log.
@@ -84,7 +86,7 @@ type Event struct {
 	// RequestURI is the request URI as sent by the client to a server.
 	RequestURI string `json:"requestURI"`
 	// Verb is the kubernetes verb associated with the request.
-	// For non-resource requests, this is identical to HttpMethod.
+	// For non-resource requests, this is the lower-cased HTTP method.
 	Verb string `json:"verb"`
 	// Authenticated user information.
 	User authnv1.UserInfo `json:"user"`

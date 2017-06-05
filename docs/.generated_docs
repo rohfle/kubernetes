@@ -13,6 +13,7 @@ docs/man/man1/kube-scheduler.1
 docs/man/man1/kubectl-annotate.1
 docs/man/man1/kubectl-api-versions.1
 docs/man/man1/kubectl-apiversions.1
+docs/man/man1/kubectl-apply-edit-last-applied.1
 docs/man/man1/kubectl-apply-set-last-applied.1
 docs/man/man1/kubectl-apply-view-last-applied.1
 docs/man/man1/kubectl-apply.1
@@ -33,6 +34,7 @@ docs/man/man1/kubectl-config-delete-cluster.1
 docs/man/man1/kubectl-config-delete-context.1
 docs/man/man1/kubectl-config-get-clusters.1
 docs/man/man1/kubectl-config-get-contexts.1
+docs/man/man1/kubectl-config-rename-context.1
 docs/man/man1/kubectl-config-set-cluster.1
 docs/man/man1/kubectl-config-set-context.1
 docs/man/man1/kubectl-config-set-credentials.1
@@ -111,6 +113,7 @@ docs/user-guide/kubectl/kubectl.md
 docs/user-guide/kubectl/kubectl_annotate.md
 docs/user-guide/kubectl/kubectl_api-versions.md
 docs/user-guide/kubectl/kubectl_apply.md
+docs/user-guide/kubectl/kubectl_apply_edit-last-applied.md
 docs/user-guide/kubectl/kubectl_apply_set-last-applied.md
 docs/user-guide/kubectl/kubectl_apply_view-last-applied.md
 docs/user-guide/kubectl/kubectl_attach.md
@@ -129,6 +132,7 @@ docs/user-guide/kubectl/kubectl_config_delete-cluster.md
 docs/user-guide/kubectl/kubectl_config_delete-context.md
 docs/user-guide/kubectl/kubectl_config_get-clusters.md
 docs/user-guide/kubectl/kubectl_config_get-contexts.md
+docs/user-guide/kubectl/kubectl_config_rename-context.md
 docs/user-guide/kubectl/kubectl_config_set-cluster.md
 docs/user-guide/kubectl/kubectl_config_set-context.md
 docs/user-guide/kubectl/kubectl_config_set-credentials.md

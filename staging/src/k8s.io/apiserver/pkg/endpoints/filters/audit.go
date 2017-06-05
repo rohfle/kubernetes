@@ -19,16 +19,16 @@ package filters
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"sync"
-
-	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	auditinternal "k8s.io/apiserver/pkg/apis/audit"
 	"k8s.io/apiserver/pkg/audit"
+	"k8s.io/apiserver/pkg/audit/policy"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
 	"k8s.io/apiserver/pkg/endpoints/request"
 )
@@ -49,8 +49,8 @@ import (
 // 2. the response line containing:
 //    - the unique id from 1
 //    - response code
-func WithAudit(handler http.Handler, requestContextMapper request.RequestContextMapper, sink audit.Sink, policy *auditinternal.Policy, longRunningCheck request.LongRunningRequestCheck) http.Handler {
-	if sink == nil {
+func WithAudit(handler http.Handler, requestContextMapper request.RequestContextMapper, sink audit.Sink, policy policy.Checker, longRunningCheck request.LongRunningRequestCheck) http.Handler {
+	if sink == nil || policy == nil {
 		return handler
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -67,7 +67,15 @@ func WithAudit(handler http.Handler, requestContextMapper request.RequestContext
 			return
 		}
 
-		ev, err := audit.NewEventFromRequest(req, policy, attribs)
+		level := policy.Level(attribs)
+		audit.ObservePolicyLevel(level)
+		if level == auditinternal.LevelNone {
+			// Don't audit.
+			handler.ServeHTTP(w, req)
+			return
+		}
+
+		ev, err := audit.NewEventFromRequest(req, level, attribs)
 		if err != nil {
 			utilruntime.HandleError(fmt.Errorf("failed to complete audit event from request: %v", err))
 			responsewriters.InternalError(w, req, errors.New("failed to update context"))
@@ -81,12 +89,14 @@ func WithAudit(handler http.Handler, requestContextMapper request.RequestContext
 			return
 		}
 
+		ev.Stage = auditinternal.StageRequestReceived
+		processEvent(sink, ev)
+
 		// intercept the status code
-		longRunning := false
 		var longRunningSink audit.Sink
 		if longRunningCheck != nil {
 			ri, _ := request.RequestInfoFrom(ctx)
-			if longRunning = longRunningCheck(req, ri); longRunning {
+			if longRunningCheck(req, ri) {
 				longRunningSink = sink
 			}
 		}
@@ -96,23 +106,43 @@ func WithAudit(handler http.Handler, requestContextMapper request.RequestContext
 		// running requests, this will be the second audit event.
 		defer func() {
 			if r := recover(); r != nil {
+				defer panic(r)
+				ev.Stage = auditinternal.StagePanic
 				ev.ResponseStatus = &metav1.Status{
-					Code: http.StatusInternalServerError,
+					Code:    http.StatusInternalServerError,
+					Status:  metav1.StatusFailure,
+					Reason:  metav1.StatusReasonInternalError,
+					Message: fmt.Sprintf("APIServer panic'd: %v", r),
 				}
-				sink.ProcessEvents(ev)
-				panic(r)
+				processEvent(sink, ev)
+				return
 			}
 
+			// if no StageResponseStarted event was sent b/c neither a status code nor a body was sent, fake it here
+			fakedSuccessStatus := &metav1.Status{
+				Code:    http.StatusOK,
+				Status:  metav1.StatusSuccess,
+				Message: "Connection closed early",
+			}
+			if ev.ResponseStatus == nil && longRunningSink != nil {
+				ev.ResponseStatus = fakedSuccessStatus
+				ev.Stage = auditinternal.StageResponseStarted
+				processEvent(longRunningSink, ev)
+			}
+
+			ev.Stage = auditinternal.StageResponseComplete
 			if ev.ResponseStatus == nil {
-				ev.ResponseStatus = &metav1.Status{
-					Code: 200,
-				}
+				ev.ResponseStatus = fakedSuccessStatus
 			}
-
-			sink.ProcessEvents(ev)
+			processEvent(sink, ev)
 		}()
 		handler.ServeHTTP(respWriter, req)
 	})
+}
+
+func processEvent(sink audit.Sink, ev *auditinternal.Event) {
+	audit.ObserveEvent()
+	sink.ProcessEvents(ev)
 }
 
 func decorateResponseWriter(responseWriter http.ResponseWriter, ev *auditinternal.Event, sink audit.Sink) http.ResponseWriter {
@@ -146,17 +176,15 @@ type auditResponseWriter struct {
 
 func (a *auditResponseWriter) processCode(code int) {
 	a.once.Do(func() {
-		if a.sink != nil {
-			a.sink.ProcessEvents(a.event)
-		}
-
-		// for now we use the ResponseStatus as marker that it's the first or second event
-		// of a long running request. As soon as we have such a field in the event, we can
-		// change this.
 		if a.event.ResponseStatus == nil {
 			a.event.ResponseStatus = &metav1.Status{}
 		}
 		a.event.ResponseStatus.Code = int32(code)
+		a.event.Stage = auditinternal.StageResponseStarted
+
+		if a.sink != nil {
+			processEvent(a.sink, a.event)
+		}
 	})
 }
 
