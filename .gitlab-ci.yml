@@ -1,4 +1,4 @@
-image: git
+image: buildpack-deps:jessie-scm
 stages:
   - crud_ci_branch
 before_script:
