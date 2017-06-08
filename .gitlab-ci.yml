@@ -1,0 +1,11 @@
+image: docker:17.05.0
+stages:
+  - crud_ci_branch
+before_script:
+  - git status
+  - git branch -av
+
+build:
+  stage: crud_ci_branch
+  script:
+    - sleep 999999
