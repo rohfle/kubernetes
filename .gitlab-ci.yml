@@ -9,7 +9,7 @@ before_script:
   - apk update
   - apk add bash tar rsync git curl make file
   - git status
-  - git checkout $CI_TARGET_BRANCH
+  - git checkout $CI_TARGET_REF
   - sed -i -e '/ linux\/arm/ s/^/#/' hack/lib/golang.sh
   - sed -i -e '/ linux\/s390/ s/^/#/' hack/lib/golang.sh
   - sed -i -e '/ linux\/386/ s/^/#/' hack/lib/golang.sh
