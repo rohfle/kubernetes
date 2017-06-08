@@ -1,4 +1,4 @@
-image: docker:17.05.0
+image: git
 stages:
   - crud_ci_branch
 before_script:
