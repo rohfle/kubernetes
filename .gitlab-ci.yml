@@ -2,6 +2,7 @@ image: docker:17.05.0
 stages:
   - build
   - release
+
 before_script:
   - apk update
   - apk add bash tar rsync git curl make file
@@ -56,8 +57,11 @@ build-e2e:
 
 release:
   stage: release
+  script:
+    - cat e2e.env
+    - cat release.env
   variables:
-      GIT_STRATEGY: none
+    GIT_STRATEGY: none
   artifacts:
     name: "${CI_JOB_NAME}.${CI_PIPELINE_ID}.${CI_JOB_ID}"
     expire_in: 1 weeks
