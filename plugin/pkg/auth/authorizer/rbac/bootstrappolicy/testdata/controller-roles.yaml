@@ -681,6 +681,13 @@ items:
   - apiGroups:
     - ""
     resources:
+    - nodes
+    verbs:
+    - get
+    - list
+  - apiGroups:
+    - ""
+    resources:
     - events
     verbs:
     - watch
@@ -968,6 +975,18 @@ items:
     - get
     - patch
     - update
+  - apiGroups:
+    - apps
+    resources:
+    - controllerrevisions
+    verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
   - apiGroups:
     - ""
     resources:

@@ -24,10 +24,10 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/pborman/uuid"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/util/exec"
 	"k8s.io/kubernetes/pkg/util/mount"
 	"k8s.io/kubernetes/pkg/util/strings"
@@ -234,12 +234,12 @@ func (mounter *quobyteMounter) CanMount() error {
 }
 
 // SetUp attaches the disk and bind mounts to the volume path.
-func (mounter *quobyteMounter) SetUp(fsGroup *types.UnixGroupID) error {
+func (mounter *quobyteMounter) SetUp(fsGroup *int64) error {
 	pluginDir := mounter.plugin.host.GetPluginDir(strings.EscapeQualifiedNameForDisk(quobytePluginName))
 	return mounter.SetUpAt(pluginDir, fsGroup)
 }
 
-func (mounter *quobyteMounter) SetUpAt(dir string, fsGroup *types.UnixGroupID) error {
+func (mounter *quobyteMounter) SetUpAt(dir string, fsGroup *int64) error {
 	// Check if Quobyte is already mounted on the host in the Plugin Dir
 	// if so we can use this mountpoint instead of creating a new one
 	// IsLikelyNotMountPoint wouldn't check the mount type
@@ -356,6 +356,10 @@ type quobyteVolumeProvisioner struct {
 }
 
 func (provisioner *quobyteVolumeProvisioner) Provision() (*v1.PersistentVolume, error) {
+	if !volume.AccessModesContainedInAll(provisioner.plugin.GetAccessModes(), provisioner.options.PVC.Spec.AccessModes) {
+		return nil, fmt.Errorf("invalid AccessModes %v: only AccessModes %v are supported", provisioner.options.PVC.Spec.AccessModes, provisioner.plugin.GetAccessModes())
+	}
+
 	if provisioner.options.PVC.Spec.Selector != nil {
 		return nil, fmt.Errorf("claim Selector is not supported")
 	}

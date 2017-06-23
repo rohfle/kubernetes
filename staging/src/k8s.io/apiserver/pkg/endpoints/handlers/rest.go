@@ -155,6 +155,7 @@ func GetResource(r rest.Getter, e rest.Exporter, scope RequestScope) http.Handle
 			if values := req.URL.Query(); len(values) > 0 {
 				exports := metav1.ExportOptions{}
 				if err := metainternalversion.ParameterCodec.DecodeParameters(values, scope.MetaGroupVersion, &exports); err != nil {
+					err = errors.NewBadRequest(err.Error())
 					return nil, err
 				}
 				if exports.Export {
@@ -164,6 +165,7 @@ func GetResource(r rest.Getter, e rest.Exporter, scope RequestScope) http.Handle
 					return e.Export(ctx, name, exports)
 				}
 				if err := metainternalversion.ParameterCodec.DecodeParameters(values, scope.MetaGroupVersion, &options); err != nil {
+					err = errors.NewBadRequest(err.Error())
 					return nil, err
 				}
 			}
@@ -181,6 +183,7 @@ func GetResourceWithOptions(r rest.GetterWithOptions, scope RequestScope, isSubr
 			opts, subpath, subpathKey := r.NewGetOptions()
 			trace.Step("About to process Get options")
 			if err := getRequestOptions(req, scope, opts, subpath, subpathKey, isSubresource); err != nil {
+				err = errors.NewBadRequest(err.Error())
 				return nil, err
 			}
 			if trace != nil {
@@ -227,6 +230,7 @@ func ConnectResource(connecter rest.Connecter, scope RequestScope, admit admissi
 		ctx = request.WithNamespace(ctx, namespace)
 		opts, subpath, subpathKey := connecter.NewConnectOptions()
 		if err := getRequestOptions(req, scope, opts, subpath, subpathKey, isSubresource); err != nil {
+			err = errors.NewBadRequest(err.Error())
 			scope.err(err, w, req)
 			return
 		}
@@ -293,6 +297,7 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope RequestScope, forceWatch
 
 		opts := metainternalversion.ListOptions{}
 		if err := metainternalversion.ParameterCodec.DecodeParameters(req.URL.Query(), scope.MetaGroupVersion, &opts); err != nil {
+			err = errors.NewBadRequest(err.Error())
 			scope.err(err, w, req)
 			return
 		}
@@ -437,7 +442,7 @@ func createHandler(r rest.NamedCreater, scope RequestScope, typer runtime.Object
 		trace.Step("Conversion done")
 
 		ae := request.AuditEventFrom(ctx)
-		audit.LogRequestObject(ae, obj, scope.Resource.GroupVersion(), scope.Serializer)
+		audit.LogRequestObject(ae, obj, scope.Resource, scope.Subresource, scope.Serializer)
 
 		if admit != nil && admit.Handles(admission.Create) {
 			userInfo, _ := request.UserFrom(ctx)
@@ -857,7 +862,8 @@ func UpdateResource(r rest.Updater, scope RequestScope, typer runtime.ObjectType
 		defaultGVK := scope.Kind
 		original := r.New()
 		trace.Step("About to convert to expected version")
-		obj, gvk, err := scope.Serializer.DecoderToVersion(s.Serializer, defaultGVK.GroupVersion()).Decode(body, &defaultGVK, original)
+		decoder := scope.Serializer.DecoderToVersion(s.Serializer, schema.GroupVersion{Group: defaultGVK.Group, Version: runtime.APIVersionInternal})
+		obj, gvk, err := decoder.Decode(body, &defaultGVK, original)
 		if err != nil {
 			err = transformDecodeError(typer, err, original, gvk, body)
 			scope.err(err, w, req)
@@ -871,7 +877,7 @@ func UpdateResource(r rest.Updater, scope RequestScope, typer runtime.ObjectType
 		trace.Step("Conversion done")
 
 		ae := request.AuditEventFrom(ctx)
-		audit.LogRequestObject(ae, obj, scope.Resource.GroupVersion(), scope.Serializer)
+		audit.LogRequestObject(ae, obj, scope.Resource, scope.Subresource, scope.Serializer)
 
 		if err := checkName(obj, name, namespace, scope.Namer); err != nil {
 			scope.err(err, w, req)
@@ -964,10 +970,11 @@ func DeleteResource(r rest.GracefulDeleter, allowsOptions bool, scope RequestSco
 				}
 
 				ae := request.AuditEventFrom(ctx)
-				audit.LogRequestObject(ae, obj, scope.Resource.GroupVersion(), scope.Serializer)
+				audit.LogRequestObject(ae, obj, scope.Resource, scope.Subresource, scope.Serializer)
 			} else {
 				if values := req.URL.Query(); len(values) > 0 {
 					if err := metainternalversion.ParameterCodec.DecodeParameters(values, scope.MetaGroupVersion, options); err != nil {
+						err = errors.NewBadRequest(err.Error())
 						scope.err(err, w, req)
 						return
 					}
@@ -1065,6 +1072,7 @@ func DeleteCollection(r rest.CollectionDeleter, checkBody bool, scope RequestSco
 
 		listOptions := metainternalversion.ListOptions{}
 		if err := metainternalversion.ParameterCodec.DecodeParameters(req.URL.Query(), scope.MetaGroupVersion, &listOptions); err != nil {
+			err = errors.NewBadRequest(err.Error())
 			scope.err(err, w, req)
 			return
 		}
@@ -1108,7 +1116,7 @@ func DeleteCollection(r rest.CollectionDeleter, checkBody bool, scope RequestSco
 				}
 
 				ae := request.AuditEventFrom(ctx)
-				audit.LogRequestObject(ae, obj, scope.Resource.GroupVersion(), scope.Serializer)
+				audit.LogRequestObject(ae, obj, scope.Resource, scope.Subresource, scope.Serializer)
 			}
 		}
 

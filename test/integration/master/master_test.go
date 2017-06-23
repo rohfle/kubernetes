@@ -31,13 +31,13 @@ import (
 
 	"github.com/ghodss/yaml"
 
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/testapi"
-	"k8s.io/kubernetes/pkg/api/v1"
 	clienttypedv1 "k8s.io/kubernetes/pkg/client/clientset_generated/clientset/typed/core/v1"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/test/integration"
@@ -98,6 +98,41 @@ func TestEmptyList(t *testing.T) {
 	} else if items == nil {
 		t.Logf("body: %s", string(data))
 		t.Fatalf("nil items field from empty list (all lists should return non-nil empty items lists)")
+	}
+}
+
+func TestStatus(t *testing.T) {
+	_, s, closeFn := framework.RunAMaster(nil)
+	defer closeFn()
+
+	u := s.URL + "/apis/batch/v1/namespaces/default/jobs/foo"
+	resp, err := http.Get(u)
+	if err != nil {
+		t.Fatalf("unexpected error getting %s: %v", u, err)
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("got status %v instead of 404", resp.StatusCode)
+	}
+	defer resp.Body.Close()
+	data, _ := ioutil.ReadAll(resp.Body)
+	decodedData := map[string]interface{}{}
+	if err := json.Unmarshal(data, &decodedData); err != nil {
+		t.Logf("body: %s", string(data))
+		t.Fatalf("got error decoding data: %v", err)
+	}
+	t.Logf("body: %s", string(data))
+
+	if got, expected := decodedData["apiVersion"], "v1"; got != expected {
+		t.Errorf("unexpected apiVersion %q, expected %q", got, expected)
+	}
+	if got, expected := decodedData["kind"], "Status"; got != expected {
+		t.Errorf("unexpected kind %q, expected %q", got, expected)
+	}
+	if got, expected := decodedData["status"], "Failure"; got != expected {
+		t.Errorf("unexpected status %q, expected %q", got, expected)
+	}
+	if got, expected := decodedData["code"], float64(404); got != expected {
+		t.Errorf("unexpected code %v, expected %v", got, expected)
 	}
 }
 

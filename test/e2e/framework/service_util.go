@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/api/core/v1"
+	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -33,8 +35,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/kubernetes/pkg/api/v1"
-	policyv1beta1 "k8s.io/kubernetes/pkg/apis/policy/v1beta1"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/client/retry"
@@ -734,7 +734,7 @@ func newEchoServerPodSpec(podName string) *v1.Pod {
 			Containers: []v1.Container{
 				{
 					Name:  "echoserver",
-					Image: "gcr.io/google_containers/echoserver:1.4",
+					Image: "gcr.io/google_containers/echoserver:1.6",
 					Ports: []v1.ContainerPort{{ContainerPort: int32(port)}},
 				},
 			},
@@ -1300,9 +1300,17 @@ func VerifyServeHostnameServiceDown(c clientset.Interface, host string, serviceI
 	return fmt.Errorf("waiting for service to be down timed out")
 }
 
-func CleanupServiceGCEResources(loadBalancerName string) {
+func CleanupServiceResources(loadBalancerName, zone string) {
+	if TestContext.Provider == "gce" || TestContext.Provider == "gke" {
+		CleanupServiceGCEResources(loadBalancerName, zone)
+	}
+
+	// TODO: we need to add this function with other cloud providers, if there is a need.
+}
+
+func CleanupServiceGCEResources(loadBalancerName, zone string) {
 	if pollErr := wait.Poll(5*time.Second, LoadBalancerCleanupTimeout, func() (bool, error) {
-		if err := CleanupGCEResources(loadBalancerName); err != nil {
+		if err := CleanupGCEResources(loadBalancerName, zone); err != nil {
 			Logf("Still waiting for glbc to cleanup: %v", err)
 			return false, nil
 		}

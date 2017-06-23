@@ -22,11 +22,11 @@ import (
 	"net/http"
 	"time"
 
+	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubernetes/pkg/api"
-	extensions "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
 	"k8s.io/kubernetes/test/e2e/framework"
 
 	. "github.com/onsi/ginkgo"
@@ -52,7 +52,7 @@ type Foo struct {
 
 type FooList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty" description:"standard list metadata; see http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata"`
+	metav1.ListMeta `json:"metadata,omitempty" description:"standard list metadata; see https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata"`
 
 	Items []Foo `json:"items"`
 }

@@ -25,22 +25,29 @@ import (
 
 	"github.com/ghodss/yaml"
 
+	api "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	api "k8s.io/client-go/pkg/api/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
 	kubeadmapiext "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1alpha1"
 	kubeadmconstants "k8s.io/kubernetes/cmd/kubeadm/app/constants"
 	"k8s.io/kubernetes/cmd/kubeadm/app/images"
+	kubeadmutil "k8s.io/kubernetes/cmd/kubeadm/app/util"
+	bootstrapapi "k8s.io/kubernetes/pkg/bootstrap/api"
 	authzmodes "k8s.io/kubernetes/pkg/kubeapiserver/authorizer/modes"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
+	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/util/version"
 )
 
 // Static pod definitions in golang form are included below so that `kubeadm init` can get going.
 const (
 	DefaultCloudConfigPath = "/etc/kubernetes/cloud-config"
+
+	defaultv16AdmissionControl = "NamespaceLifecycle,LimitRanger,ServiceAccount,PersistentVolumeLabel,DefaultStorageClass,DefaultTolerationSeconds,ResourceQuota"
+	defaultv17AdmissionControl = "Initializers,NamespaceLifecycle,LimitRanger,ServiceAccount,PersistentVolumeLabel,DefaultStorageClass,DefaultTolerationSeconds,NodeRestriction,ResourceQuota"
 
 	etcd                  = "etcd"
 	apiServer             = "apiserver"
@@ -51,10 +58,6 @@ const (
 	kubeControllerManager = "kube-controller-manager"
 	kubeScheduler         = "kube-scheduler"
 	kubeProxy             = "kube-proxy"
-)
-
-var (
-	v170 = version.MustParseSemantic("v1.7.0-alpha.0")
 )
 
 // WriteStaticPodManifests builds manifest objects based on user provided configuration and then dumps it to disk
@@ -97,7 +100,7 @@ func WriteStaticPodManifests(cfg *kubeadmapi.MasterConfiguration) error {
 		kubeControllerManager: componentPod(api.Container{
 			Name:          kubeControllerManager,
 			Image:         images.GetCoreImage(images.KubeControllerManagerImage, cfg, kubeadmapi.GlobalEnvParams.HyperkubeImage),
-			Command:       getControllerManagerCommand(cfg, false),
+			Command:       getControllerManagerCommand(cfg, false, k8sVersion),
 			VolumeMounts:  volumeMounts,
 			LivenessProbe: componentProbe(10252, "/healthz", api.URISchemeHTTP),
 			Resources:     componentResources("200m"),
@@ -299,9 +302,10 @@ func componentPod(container api.Container, volumes ...api.Volume) api.Pod {
 			Kind:       "Pod",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      container.Name,
-			Namespace: "kube-system",
-			Labels:    map[string]string{"component": container.Name, "tier": "control-plane"},
+			Name:        container.Name,
+			Namespace:   "kube-system",
+			Annotations: map[string]string{kubetypes.CriticalPodAnnotationKey: ""},
+			Labels:      map[string]string{"component": container.Name, "tier": "control-plane"},
 		},
 		Spec: api.PodSpec{
 			Containers:  []api.Container{container},
@@ -329,7 +333,7 @@ func getAPIServerCommand(cfg *kubeadmapi.MasterConfiguration, selfHosted bool, k
 
 	defaultArguments := map[string]string{
 		"insecure-port":                     "0",
-		"admission-control":                 kubeadmconstants.DefaultAdmissionControl,
+		"admission-control":                 defaultv16AdmissionControl,
 		"service-cluster-ip-range":          cfg.Networking.ServiceSubnet,
 		"service-account-key-file":          filepath.Join(cfg.CertificatesDir, kubeadmconstants.ServiceAccountPublicKeyName),
 		"client-ca-file":                    filepath.Join(cfg.CertificatesDir, kubeadmconstants.CACertName),
@@ -349,10 +353,14 @@ func getAPIServerCommand(cfg *kubeadmapi.MasterConfiguration, selfHosted bool, k
 		"requestheader-client-ca-file":       filepath.Join(cfg.CertificatesDir, kubeadmconstants.FrontProxyCACertName),
 		"requestheader-allowed-names":        "front-proxy-client",
 	}
-	if k8sVersion.AtLeast(v170) {
+	if k8sVersion.AtLeast(kubeadmconstants.MinimumAPIAggregationVersion) {
 		// add options which allow the kube-apiserver to act as a front-proxy to aggregated API servers
 		defaultArguments["proxy-client-cert-file"] = filepath.Join(cfg.CertificatesDir, kubeadmconstants.FrontProxyClientCertName)
 		defaultArguments["proxy-client-key-file"] = filepath.Join(cfg.CertificatesDir, kubeadmconstants.FrontProxyClientKeyName)
+	}
+	if kubeadmutil.IsNodeAuthorizerSupported(k8sVersion) {
+		// enable the NodeRestriction admission plugin
+		defaultArguments["admission-control"] = defaultv17AdmissionControl
 	}
 
 	command = getComponentBaseCommand(apiServer)
@@ -409,7 +417,7 @@ func getEtcdCommand(cfg *kubeadmapi.MasterConfiguration) []string {
 	return command
 }
 
-func getControllerManagerCommand(cfg *kubeadmapi.MasterConfiguration, selfHosted bool) []string {
+func getControllerManagerCommand(cfg *kubeadmapi.MasterConfiguration, selfHosted bool, k8sVersion *version.Version) []string {
 	var command []string
 
 	// self-hosted controller-manager needs to wait on a lock
@@ -427,6 +435,11 @@ func getControllerManagerCommand(cfg *kubeadmapi.MasterConfiguration, selfHosted
 		"cluster-signing-key-file":         filepath.Join(cfg.CertificatesDir, kubeadmconstants.CAKeyName),
 		"use-service-account-credentials":  "true",
 		"controllers":                      "*,bootstrapsigner,tokencleaner",
+	}
+	if k8sVersion.LessThan(kubeadmconstants.MinimumCSRSARApproverVersion) {
+		// enable the former CSR group approver for v1.6 clusters.
+		// TODO(luxas): Remove this once we're targeting v1.8 at HEAD
+		defaultArguments["insecure-experimental-approve-all-kubelet-csrs-for-group"] = bootstrapapi.BootstrapGroup
 	}
 
 	command = getComponentBaseCommand(controllerManager)
@@ -503,21 +516,25 @@ func getSelfHostedAPIServerEnv() []api.EnvVar {
 
 func getAuthzParameters(modes []string) []string {
 	command := []string{}
-	// RBAC is always on. If the user specified
-	authzModes := []string{authzmodes.ModeRBAC}
-	for _, authzMode := range modes {
-		if len(authzMode) != 0 && authzMode != authzmodes.ModeRBAC {
-			authzModes = append(authzModes, authzMode)
-		}
-		switch authzMode {
-		case authzmodes.ModeABAC:
-			command = append(command, "--authorization-policy-file="+kubeadmconstants.AuthorizationPolicyPath)
-		case authzmodes.ModeWebhook:
-			command = append(command, "--authorization-webhook-config-file="+kubeadmconstants.AuthorizationWebhookConfigPath)
-		}
+	strset := sets.NewString(modes...)
+
+	// RBAC must always be set, prepend that if not present in the list
+	// TODO(luxas): In v1.8, require the Node and RBAC authorizers to be present
+	// In v1.8 we can utilize the API defaulting/validation to do enforce this,
+	// currently this logic has to be split up into two places, which is sub-optimal.
+	// Cleanup work is possible in and should be done in v1.8
+	if !strset.Has(authzmodes.ModeRBAC) {
+		modes = append([]string{authzmodes.ModeRBAC}, modes...)
 	}
 
-	command = append(command, "--authorization-mode="+strings.Join(authzModes, ","))
+	if strset.Has(authzmodes.ModeABAC) {
+		command = append(command, "--authorization-policy-file="+kubeadmconstants.AuthorizationPolicyPath)
+	}
+	if strset.Has(authzmodes.ModeWebhook) {
+		command = append(command, "--authorization-webhook-config-file="+kubeadmconstants.AuthorizationWebhookConfigPath)
+	}
+
+	command = append(command, "--authorization-mode="+strings.Join(modes, ","))
 	return command
 }
 

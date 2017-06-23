@@ -38,9 +38,9 @@ import (
 
 	"k8s.io/apiserver/pkg/server/healthz"
 
+	clientv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/discovery"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
-	clientv1 "k8s.io/client-go/pkg/api/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/record"
@@ -57,6 +57,7 @@ import (
 	serviceaccountcontroller "k8s.io/kubernetes/pkg/controller/serviceaccount"
 	"k8s.io/kubernetes/pkg/serviceaccount"
 	"k8s.io/kubernetes/pkg/util/configz"
+	"k8s.io/kubernetes/pkg/version"
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
@@ -102,6 +103,8 @@ func ResyncPeriod(s *options.CMServer) func() time.Duration {
 
 // Run runs the CMServer.  This should never exit.
 func Run(s *options.CMServer) error {
+	// To help debugging, immediately log version
+	glog.Infof("Version: %+v", version.Get())
 	if err := s.Validate(KnownControllers(), ControllersDisabledByDefault.List()); err != nil {
 		return err
 	}

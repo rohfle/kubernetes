@@ -39,6 +39,8 @@ import (
 
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"k8s.io/api/core/v1"
+	extensions "k8s.io/api/extensions/v1beta1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -48,8 +50,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/v1"
-	extensions "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	gcecloud "k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"k8s.io/kubernetes/pkg/util"
@@ -717,9 +717,10 @@ func (cont *GCEIngressController) Init() {
 // invoking deleteStaticIPs.
 func (cont *GCEIngressController) CreateStaticIP(name string) string {
 	gceCloud := cont.Cloud.Provider.(*gcecloud.GCECloud)
-	ip, err := gceCloud.ReserveGlobalStaticIP(name, "")
+	addr := &compute.Address{Name: name}
+	ip, err := gceCloud.ReserveGlobalAddress(addr)
 	if err != nil {
-		if delErr := gceCloud.DeleteGlobalStaticIP(name); delErr != nil {
+		if delErr := gceCloud.DeleteGlobalAddress(name); delErr != nil {
 			if cont.isHTTPErrorCode(delErr, http.StatusNotFound) {
 				Logf("Static ip with name %v was not allocated, nothing to delete", name)
 			} else {
@@ -973,14 +974,13 @@ func (j *IngressTestJig) GetIngressNodePorts() []string {
 }
 
 // ConstructFirewallForIngress returns the expected GCE firewall rule for the ingress resource
-func (j *IngressTestJig) ConstructFirewallForIngress(gceController *GCEIngressController) *compute.Firewall {
-	nodeTags := GetNodeTags(j.Client, gceController.Cloud)
+func (j *IngressTestJig) ConstructFirewallForIngress(gceController *GCEIngressController, nodeTag string) *compute.Firewall {
 	nodePorts := j.GetIngressNodePorts()
 
 	fw := compute.Firewall{}
 	fw.Name = gceController.GetFirewallRuleName()
 	fw.SourceRanges = gcecloud.LoadBalancerSrcRanges()
-	fw.TargetTags = nodeTags.Items
+	fw.TargetTags = []string{nodeTag}
 	fw.Allowed = []*compute.FirewallAllowed{
 		{
 			IPProtocol: "tcp",

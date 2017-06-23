@@ -437,6 +437,10 @@ func (storage *SimpleRESTStorage) Export(ctx request.Context, name string, opts 
 	return obj, storage.errors["export"]
 }
 
+func (storage *SimpleRESTStorage) ConvertToTable(ctx request.Context, obj runtime.Object, tableOptions runtime.Object) (*metav1alpha1.Table, error) {
+	return rest.NewDefaultTableConvertor(schema.GroupResource{Resource: "simple"}).ConvertToTable(ctx, obj, tableOptions)
+}
+
 func (storage *SimpleRESTStorage) List(ctx request.Context, options *metainternalversion.ListOptions) (runtime.Object, error) {
 	storage.checkContext(ctx)
 	result := &genericapitesting.SimpleList{
@@ -1157,6 +1161,52 @@ func TestList(t *testing.T) {
 	}
 }
 
+func TestRequestsWithInvalidQuery(t *testing.T) {
+	storage := map[string]rest.Storage{}
+
+	storage["simple"] = &SimpleRESTStorage{expectedResourceNamespace: "default"}
+	storage["withoptions"] = GetWithOptionsRESTStorage{}
+
+	var handler = handleInternal(storage, admissionControl, selfLinker, nil)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	for i, test := range []struct {
+		postfix string
+		method  string
+	}{
+		{"/simple?labelSelector=<invalid>", http.MethodGet},
+		{"/simple/foo?gracePeriodSeconds=<invalid>", http.MethodDelete},
+		// {"/simple?labelSelector=<value>", http.MethodDelete}, TODO: implement DeleteCollection in  SimpleRESTStorage
+		// {"/simple/foo?export=<invalid>", http.MethodGet}, TODO: there is no invalid bool in conversion. Should we be more strict?
+		// {"/simple/foo?resourceVersion=<invalid>", http.MethodGet}, TODO: there is no invalid resourceVersion. Should we be more strict?
+		// {"/withoptions?labelSelector=<invalid>", http.MethodGet}, TODO: SimpleGetOptions is always valid. Add more validation that can fail.
+	} {
+		baseURL := server.URL + "/" + grouplessPrefix + "/" + grouplessGroupVersion.Version + "/namespaces/default"
+		url := baseURL + test.postfix
+		r, err := http.NewRequest(test.method, url, nil)
+		if err != nil {
+			t.Errorf("%d: unexpected error: %v", i, err)
+			continue
+		}
+		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Errorf("%d: unexpected error: %v", i, err)
+			continue
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%d: unexpected status: %d from url %s, Expected: %d, %#v", i, resp.StatusCode, url, http.StatusBadRequest, resp)
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				t.Errorf("%d: unexpected error: %v", i, err)
+				continue
+			}
+			t.Logf("%d: body: %s", i, string(body))
+		}
+	}
+}
+
 func TestLogs(t *testing.T) {
 	handler := handle(map[string]rest.Storage{})
 	server := httptest.NewServer(handler)
@@ -1653,12 +1703,11 @@ func TestGetTable(t *testing.T) {
 			expected: &metav1alpha1.Table{
 				TypeMeta: metav1.TypeMeta{Kind: "Table", APIVersion: "meta.k8s.io/v1alpha1"},
 				ColumnDefinitions: []metav1alpha1.TableColumnDefinition{
-					{Name: "Namespace", Type: "string", Description: metaDoc["namespace"]},
 					{Name: "Name", Type: "string", Description: metaDoc["name"]},
 					{Name: "Created At", Type: "date", Description: metaDoc["creationTimestamp"]},
 				},
 				Rows: []metav1alpha1.TableRow{
-					{Cells: []interface{}{"ns1", "foo1", now.Time.UTC().Format(time.RFC3339)}, Object: runtime.RawExtension{Raw: encodedBody}},
+					{Cells: []interface{}{"foo1", now.Time.UTC().Format(time.RFC3339)}, Object: runtime.RawExtension{Raw: encodedBody}},
 				},
 			},
 		},
@@ -1683,7 +1732,7 @@ func TestGetTable(t *testing.T) {
 			continue
 		}
 		if resp.StatusCode != http.StatusOK {
-			t.Fatal(err)
+			t.Errorf("%d: unexpected response: %#v", resp)
 		}
 		var itemOut metav1alpha1.Table
 		if _, err = extractBody(resp, &itemOut); err != nil {

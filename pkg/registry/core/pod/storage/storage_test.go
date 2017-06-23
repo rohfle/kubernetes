@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"golang.org/x/net/context"
+	"k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,7 +38,6 @@ import (
 	storeerr "k8s.io/apiserver/pkg/storage/errors"
 	etcdtesting "k8s.io/apiserver/pkg/storage/etcd/testing"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/registry/registrytest"
 	"k8s.io/kubernetes/pkg/securitycontext"
 )
@@ -887,4 +887,12 @@ func TestShortNames(t *testing.T) {
 	defer storage.Store.DestroyFunc()
 	expected := []string{"po"}
 	registrytest.AssertShortNames(t, storage, expected)
+}
+
+func TestCategories(t *testing.T) {
+	storage, _, _, server := newStorage(t)
+	defer server.Terminate(t)
+	defer storage.Store.DestroyFunc()
+	expected := []string{"all"}
+	registrytest.AssertCategories(t, storage, expected)
 }

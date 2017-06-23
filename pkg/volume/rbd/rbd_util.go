@@ -34,7 +34,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"k8s.io/kubernetes/pkg/api/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/util/exec"
 	"k8s.io/kubernetes/pkg/util/mount"
 	"k8s.io/kubernetes/pkg/util/node"
@@ -264,7 +264,7 @@ func (util *RBDUtil) AttachDisk(b rbdMounter) error {
 		// modprobe
 		_, err = b.plugin.execCommand("modprobe", []string{"rbd"})
 		if err != nil {
-			return fmt.Errorf("rbd: failed to modprobe rbd error:%v", err)
+			glog.Warningf("rbd: failed to load rbd kernel module:%v", err)
 		}
 
 		// fence off other mappers

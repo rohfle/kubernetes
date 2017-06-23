@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/gofuzz"
 
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	apitesting "k8s.io/apimachinery/pkg/api/testing"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,7 +36,6 @@ import (
 	kubeadmfuzzer "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/fuzzer"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/testapi"
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/apis/admissionregistration"
 	"k8s.io/kubernetes/pkg/apis/apps"
 	"k8s.io/kubernetes/pkg/apis/autoscaling"
@@ -722,6 +722,13 @@ func appsFuncs(t apitesting.TestingCommon) []interface{} {
 			// match defaulter
 			if len(s.Spec.PodManagementPolicy) == 0 {
 				s.Spec.PodManagementPolicy = apps.OrderedReadyPodManagement
+			}
+			if len(s.Spec.UpdateStrategy.Type) == 0 {
+				s.Spec.UpdateStrategy.Type = apps.RollingUpdateStatefulSetStrategyType
+			}
+			if s.Spec.RevisionHistoryLimit == nil {
+				s.Spec.RevisionHistoryLimit = new(int32)
+				*s.Spec.RevisionHistoryLimit = 10
 			}
 		},
 	}

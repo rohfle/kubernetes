@@ -22,12 +22,12 @@ import (
 	"path/filepath"
 	"time"
 
+	"k8s.io/api/core/v1"
+	ext "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/api/v1"
-	ext "k8s.io/client-go/pkg/apis/extensions/v1beta1"
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
 	kubeadmconstants "k8s.io/kubernetes/cmd/kubeadm/app/constants"
 	"k8s.io/kubernetes/cmd/kubeadm/app/images"
@@ -124,7 +124,12 @@ func launchSelfHostedAPIServer(cfg *kubeadmapi.MasterConfiguration, client *clie
 func launchSelfHostedControllerManager(cfg *kubeadmapi.MasterConfiguration, client *clientset.Clientset, volumes []v1.Volume, volumeMounts []v1.VolumeMount) error {
 	start := time.Now()
 
-	ctrlMgr := getControllerManagerDeployment(cfg, volumes, volumeMounts)
+	kubeVersion, err := version.ParseSemantic(cfg.KubernetesVersion)
+	if err != nil {
+		return err
+	}
+
+	ctrlMgr := getControllerManagerDeployment(cfg, volumes, volumeMounts, kubeVersion)
 	if _, err := client.Extensions().Deployments(metav1.NamespaceSystem).Create(&ctrlMgr); err != nil {
 		return fmt.Errorf("failed to create self-hosted %q deployment [%v]", kubeControllerManager, err)
 	}
@@ -232,7 +237,7 @@ func getAPIServerDS(cfg *kubeadmapi.MasterConfiguration, volumes []v1.Volume, vo
 	return ds
 }
 
-func getControllerManagerDeployment(cfg *kubeadmapi.MasterConfiguration, volumes []v1.Volume, volumeMounts []v1.VolumeMount) ext.Deployment {
+func getControllerManagerDeployment(cfg *kubeadmapi.MasterConfiguration, volumes []v1.Volume, volumeMounts []v1.VolumeMount, kubeVersion *version.Version) ext.Deployment {
 	d := ext.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "extensions/v1beta1",
@@ -268,7 +273,7 @@ func getControllerManagerDeployment(cfg *kubeadmapi.MasterConfiguration, volumes
 						{
 							Name:          "self-hosted-" + kubeControllerManager,
 							Image:         images.GetCoreImage(images.KubeControllerManagerImage, cfg, kubeadmapi.GlobalEnvParams.HyperkubeImage),
-							Command:       getControllerManagerCommand(cfg, true),
+							Command:       getControllerManagerCommand(cfg, true, kubeVersion),
 							VolumeMounts:  volumeMounts,
 							LivenessProbe: componentProbe(10252, "/healthz", v1.URISchemeHTTP),
 							Resources:     componentResources("200m"),

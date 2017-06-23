@@ -33,6 +33,7 @@ import (
 	"github.com/golang/glog"
 
 	"github.com/fatih/camelcase"
+	versionedextension "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -57,7 +58,6 @@ import (
 	"k8s.io/kubernetes/pkg/apis/batch"
 	"k8s.io/kubernetes/pkg/apis/certificates"
 	"k8s.io/kubernetes/pkg/apis/extensions"
-	versionedextension "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
 	"k8s.io/kubernetes/pkg/apis/networking"
 	"k8s.io/kubernetes/pkg/apis/policy"
 	"k8s.io/kubernetes/pkg/apis/rbac"
@@ -192,7 +192,7 @@ func (g *genericDescriber) Describe(namespace, name string, describerSettings pr
 		Namespaced: g.mapping.Scope.Name() == meta.RESTScopeNameNamespace,
 		Kind:       g.mapping.GroupVersionKind.Kind,
 	}
-	obj, err := g.dynamic.Resource(apiResource, namespace).Get(name)
+	obj, err := g.dynamic.Resource(apiResource, namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -742,6 +742,8 @@ func describeVolumes(volumes []api.Volume, w PrefixWriter, space string) {
 			printScaleIOVolumeSource(volume.VolumeSource.ScaleIO, w)
 		case volume.VolumeSource.CephFS != nil:
 			printCephFSVolumeSource(volume.VolumeSource.CephFS, w)
+		case volume.VolumeSource.StorageOS != nil:
+			printStorageOSVolumeSource(volume.VolumeSource.StorageOS, w)
 		default:
 			w.Write(LEVEL_1, "<unknown>\n")
 		}
@@ -940,6 +942,24 @@ func printCephFSVolumeSource(cephfs *api.CephFSVolumeSource, w PrefixWriter) {
 		cephfs.Monitors, cephfs.Path, cephfs.User, cephfs.SecretFile, cephfs.SecretRef, cephfs.ReadOnly)
 }
 
+func printStorageOSVolumeSource(storageos *api.StorageOSVolumeSource, w PrefixWriter) {
+	w.Write(LEVEL_2, "Type:\tStorageOS (a StorageOS Persistent Disk resource)\n"+
+		"    VolumeName:\t%v\n"+
+		"    VolumeNamespace:\t%v\n"+
+		"    FSType:\t%v\n"+
+		"    ReadOnly:\t%v\n",
+		storageos.VolumeName, storageos.VolumeNamespace, storageos.FSType, storageos.ReadOnly)
+}
+
+func printStorageOSPersistentVolumeSource(storageos *api.StorageOSPersistentVolumeSource, w PrefixWriter) {
+	w.Write(LEVEL_2, "Type:\tStorageOS (a StorageOS Persistent Disk resource)\n"+
+		"    VolumeName:\t%v\n"+
+		"    VolumeNamespace:\t%v\n"+
+		"    FSType:\t%v\n"+
+		"    ReadOnly:\t%v\n",
+		storageos.VolumeName, storageos.VolumeNamespace, storageos.FSType, storageos.ReadOnly)
+}
+
 type PersistentVolumeDescriber struct {
 	clientset.Interface
 }
@@ -1013,6 +1033,8 @@ func describePersistentVolume(pv *api.PersistentVolume, events *api.EventList) (
 			printLocalVolumeSource(pv.Spec.Local, w)
 		case pv.Spec.CephFS != nil:
 			printCephFSVolumeSource(pv.Spec.CephFS, w)
+		case pv.Spec.StorageOS != nil:
+			printStorageOSPersistentVolumeSource(pv.Spec.StorageOS, w)
 		}
 
 		if events != nil {
@@ -1360,7 +1382,7 @@ func describeVolumeClaimTemplates(templates []api.PersistentVolumeClaim, w Prefi
 		printLabelsMultilineWithIndent(w, "  ", "Labels", "\t", pvc.Labels, sets.NewString())
 		printLabelsMultilineWithIndent(w, "  ", "Annotations", "\t", pvc.Annotations, sets.NewString())
 		if capacity, ok := pvc.Spec.Resources.Requests[api.ResourceStorage]; ok {
-			w.Write(LEVEL_1, "Capacity:\t%s\n", capacity)
+			w.Write(LEVEL_1, "Capacity:\t%s\n", capacity.String())
 		} else {
 			w.Write(LEVEL_1, "Capacity:\t%s\n", "<default>")
 		}
@@ -2627,6 +2649,14 @@ func describeHorizontalPodAutoscaler(hpa *autoscaling.HorizontalPodAutoscaler, e
 				w.Write(LEVEL_0, "failed to check Replication Controller\n")
 			}
 		}
+		if len(hpa.Status.Conditions) > 0 {
+			w.Write(LEVEL_0, "Conditions:\n")
+			w.Write(LEVEL_1, "Type\tStatus\tReason\tMessage\n")
+			w.Write(LEVEL_1, "----\t------\t------\t-------\n")
+			for _, c := range hpa.Status.Conditions {
+				w.Write(LEVEL_1, "%v\t%v\t%v\t%v\n", c.Type, c.Status, c.Reason, c.Message)
+			}
+		}
 
 		if events != nil {
 			DescribeEvents(events, w)
@@ -2785,10 +2815,6 @@ func describeDeployment(d *versionedextension.Deployment, selector labels.Select
 				newRSs = append(newRSs, newRS)
 			}
 			w.Write(LEVEL_0, "NewReplicaSet:\t%s\n", printReplicaSetsByLabels(newRSs))
-		}
-		overlapWith := d.Annotations[deploymentutil.OverlapAnnotation]
-		if len(overlapWith) > 0 {
-			w.Write(LEVEL_0, "!!!WARNING!!! This deployment has overlapping label selector with deployment %q and won't behave as expected. Please fix it before continuing.\n", overlapWith)
 		}
 		if events != nil {
 			DescribeEvents(events, w)
@@ -3291,9 +3317,9 @@ func printTolerationsMultilineWithIndent(w PrefixWriter, initialIndent, title, i
 					w.Write(LEVEL_0, "%s", initialIndent)
 					w.Write(LEVEL_0, "%s", innerIndent)
 				}
-				w.Write(LEVEL_0, "%s=%s", toleration.Key, toleration.Value)
-				if len(toleration.Operator) != 0 {
-					w.Write(LEVEL_0, ":%s", toleration.Operator)
+				w.Write(LEVEL_0, "%s", toleration.Key)
+				if len(toleration.Value) != 0 {
+					w.Write(LEVEL_0, "=%s", toleration.Value)
 				}
 				if len(toleration.Effect) != 0 {
 					w.Write(LEVEL_0, ":%s", toleration.Effect)

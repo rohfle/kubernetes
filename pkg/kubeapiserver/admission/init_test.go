@@ -22,7 +22,6 @@ import (
 
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
-	"k8s.io/kubernetes/pkg/apis/admissionregistration"
 )
 
 // TestAuthorizer is a testing struct for testing that fulfills the authorizer interface.
@@ -57,7 +56,7 @@ var _ WantsAuthorizer = &WantAuthorizerAdmission{}
 // TestWantsAuthorizer ensures that the authorizer is injected when the WantsAuthorizer
 // interface is implemented.
 func TestWantsAuthorizer(t *testing.T) {
-	initializer := NewPluginInitializer(nil, nil, &TestAuthorizer{}, nil, nil, nil)
+	initializer := NewPluginInitializer(nil, nil, nil, &TestAuthorizer{}, nil, nil, nil)
 	wantAuthorizerAdmission := &WantAuthorizerAdmission{}
 	initializer.Initialize(wantAuthorizerAdmission)
 	if wantAuthorizerAdmission.auth == nil {
@@ -76,7 +75,7 @@ func (self *WantsCloudConfigAdmissionPlugin) SetCloudConfig(cloudConfig []byte) 
 
 func TestCloudConfigAdmissionPlugin(t *testing.T) {
 	cloudConfig := []byte("cloud-configuration")
-	initializer := NewPluginInitializer(nil, nil, &TestAuthorizer{}, cloudConfig, nil, nil)
+	initializer := NewPluginInitializer(nil, nil, nil, &TestAuthorizer{}, cloudConfig, nil, nil)
 	wantsCloudConfigAdmission := &WantsCloudConfigAdmissionPlugin{}
 	initializer.Initialize(wantsCloudConfigAdmission)
 
@@ -121,28 +120,5 @@ func TestWantsClientCert(t *testing.T) {
 	i.SetClientCert([]byte("cert"), []byte("key")).Initialize(ccw)
 	if string(ccw.gotCert) != "cert" || string(ccw.gotKey) != "key" {
 		t.Errorf("plumbing fail - %v %v", ccw.gotCert, ccw.gotKey)
-	}
-}
-
-type fakeHookSource struct{}
-
-func (f *fakeHookSource) List() ([]admissionregistration.ExternalAdmissionHook, error) {
-	return nil, nil
-}
-
-type hookSourceWanter struct {
-	doNothingAdmission
-	got WebhookSource
-}
-
-func (s *hookSourceWanter) SetWebhookSource(w WebhookSource) { s.got = w }
-
-func TestWantsWebhookSource(t *testing.T) {
-	hsw := &hookSourceWanter{}
-	fhs := &fakeHookSource{}
-	i := &PluginInitializer{}
-	i.SetWebhookSource(fhs).Initialize(hsw)
-	if got, ok := hsw.got.(*fakeHookSource); !ok || got != fhs {
-		t.Errorf("plumbing fail - %v %v#", ok, got)
 	}
 }

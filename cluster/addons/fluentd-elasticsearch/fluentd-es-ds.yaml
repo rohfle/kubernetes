@@ -21,6 +21,7 @@ spec:
       annotations:
         scheduler.alpha.kubernetes.io/critical-pod: ''
     spec:
+      serviceAccountName: fluentd-es
       containers:
       - name: fluentd-es
         image: gcr.io/google_containers/fluentd-elasticsearch:1.23
@@ -32,7 +33,7 @@ spec:
           limits:
             memory: 200Mi
           requests:
-            cpu: 100m
+            cpu: 90m
             memory: 200Mi
         volumeMounts:
         - name: varlog

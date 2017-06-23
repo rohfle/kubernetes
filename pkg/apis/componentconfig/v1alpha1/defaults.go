@@ -26,11 +26,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/kubernetes/pkg/api"
-	rl "k8s.io/kubernetes/pkg/client/leaderelection/resourcelock"
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 	"k8s.io/kubernetes/pkg/kubelet/qos"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/master/ports"
+	"k8s.io/kubernetes/pkg/util"
 )
 
 const (
@@ -44,7 +44,7 @@ const (
 
 var (
 	zeroDuration = metav1.Duration{}
-	// Refer to [Node Allocatable](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node-allocatable.md) doc for more information.
+	// Refer to [Node Allocatable](https://git.k8s.io/community/contributors/design-proposals/node-allocatable.md) doc for more information.
 	defaultNodeAllocatableEnforcement = []string{"pods"}
 )
 
@@ -186,7 +186,8 @@ func SetDefaults_LeaderElectionConfiguration(obj *LeaderElectionConfiguration) {
 		obj.RetryPeriod = metav1.Duration{Duration: 2 * time.Second}
 	}
 	if obj.ResourceLock == "" {
-		obj.ResourceLock = rl.EndpointsResourceLock
+		// obj.ResourceLock = rl.EndpointsResourceLock
+		obj.ResourceLock = "endpoints"
 	}
 }
 
@@ -216,8 +217,8 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 	if obj.CloudProvider == "" {
 		obj.CloudProvider = AutoDetectCloudProvider
 	}
-	if obj.CAdvisorPort == 0 {
-		obj.CAdvisorPort = 4194
+	if obj.CAdvisorPort == nil {
+		obj.CAdvisorPort = util.Int32Ptr(4194)
 	}
 	if obj.VolumeStatsAggPeriod == zeroDuration {
 		obj.VolumeStatsAggPeriod = metav1.Duration{Duration: time.Minute}

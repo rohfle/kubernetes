@@ -23,7 +23,6 @@ import (
 	"crypto/x509/pkix"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
@@ -32,13 +31,15 @@ import (
 	"os"
 	"path"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	certificates "k8s.io/api/certificates/v1beta1"
+	"k8s.io/api/core/v1"
+	clientv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -51,7 +52,6 @@ import (
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	clientgoclientset "k8s.io/client-go/kubernetes"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
-	clientv1 "k8s.io/client-go/pkg/api/v1"
 	restclient "k8s.io/client-go/rest"
 	clientauth "k8s.io/client-go/tools/auth"
 	"k8s.io/client-go/tools/clientcmd"
@@ -60,8 +60,6 @@ import (
 	certutil "k8s.io/client-go/util/cert"
 	"k8s.io/kubernetes/cmd/kubelet/app/options"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/v1"
-	certificates "k8s.io/kubernetes/pkg/apis/certificates/v1beta1"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	componentconfigv1alpha1 "k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
 	"k8s.io/kubernetes/pkg/capabilities"
@@ -149,7 +147,7 @@ func UnsecuredKubeletDeps(s *options.KubeletServer) (*kubelet.KubeletDeps, error
 	}
 
 	var dockerClient libdocker.Interface
-	if s.ContainerRuntime == "docker" {
+	if s.ContainerRuntime == kubetypes.DockerContainerRuntime {
 		dockerClient = libdocker.ConnectToDockerOrDie(s.DockerEndpoint, s.RuntimeRequestTimeout.Duration,
 			s.ImagePullProgressDeadline.Duration)
 	} else {
@@ -322,7 +320,7 @@ func initConfigz(kc *componentconfig.KubeletConfiguration) (*configz.Config, err
 	return cz, err
 }
 
-// validateConfig validates configuration of Kubelet and returns an error is the input configuration is invalid.
+// validateConfig validates configuration of Kubelet and returns an error if the input configuration is invalid.
 func validateConfig(s *options.KubeletServer) error {
 	if !s.CgroupsPerQOS && len(s.EnforceNodeAllocatable) > 0 {
 		return fmt.Errorf("Node Allocatable enforcement is not supported unless Cgroups Per QOS feature is turned on")
@@ -459,7 +457,7 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) (err error) {
 				if err != nil {
 					return err
 				}
-				clientCertificateManager, err = initializeClientCertificateManager(s.CertDirectory, nodeName, clientConfig.CertData, clientConfig.KeyData)
+				clientCertificateManager, err = initializeClientCertificateManager(s.CertDirectory, nodeName, clientConfig.CertData, clientConfig.KeyData, clientConfig.CertFile, clientConfig.KeyFile)
 				if err != nil {
 					return err
 				}
@@ -524,7 +522,7 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) (err error) {
 	}
 
 	if kubeDeps.CAdvisorInterface == nil {
-		kubeDeps.CAdvisorInterface, err = cadvisor.New(uint(s.CAdvisorPort), s.ContainerRuntime, s.RootDirectory)
+		kubeDeps.CAdvisorInterface, err = cadvisor.New(s.Address, uint(s.CAdvisorPort), s.ContainerRuntime, s.RootDirectory)
 		if err != nil {
 			return err
 		}
@@ -666,13 +664,13 @@ func updateTransport(clientConfig *restclient.Config, clientCertificateManager c
 // client that can be used to sign new certificates (or rotate). It answers with
 // whatever certificate it is initialized with. If a CSR client is set later, it
 // may begin rotating/renewing the client cert
-func initializeClientCertificateManager(certDirectory string, nodeName types.NodeName, certData []byte, keyData []byte) (certificate.Manager, error) {
+func initializeClientCertificateManager(certDirectory string, nodeName types.NodeName, certData []byte, keyData []byte, certFile string, keyFile string) (certificate.Manager, error) {
 	certificateStore, err := certificate.NewFileStore(
 		"kubelet-client",
 		certDirectory,
 		certDirectory,
-		"",
-		"")
+		certFile,
+		keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize certificate store: %v", err)
 	}
@@ -933,42 +931,6 @@ func RunKubelet(kubeFlags *options.KubeletFlags, kubeCfg *componentconfig.Kubele
 	podCfg := kubeDeps.PodConfig
 
 	rlimit.RlimitNumFiles(uint64(kubeCfg.MaxOpenFiles))
-
-	// TODO(dawnchen): remove this once we deprecated old debian containervm images.
-	// This is a workaround for issue: https://github.com/opencontainers/runc/issues/726
-	// The current chosen number is consistent with most of other os dist.
-	const maxKeysPath = "/proc/sys/kernel/keys/root_maxkeys"
-	const minKeys uint64 = 1000000
-	key, err := ioutil.ReadFile(maxKeysPath)
-	if err != nil {
-		glog.Errorf("Cannot read keys quota in %s", maxKeysPath)
-	} else {
-		fields := strings.Fields(string(key))
-		nKey, _ := strconv.ParseUint(fields[0], 10, 64)
-		if nKey < minKeys {
-			glog.Infof("Setting keys quota in %s to %d", maxKeysPath, minKeys)
-			err = ioutil.WriteFile(maxKeysPath, []byte(fmt.Sprintf("%d", uint64(minKeys))), 0644)
-			if err != nil {
-				glog.Warningf("Failed to update %s: %v", maxKeysPath, err)
-			}
-		}
-	}
-	const maxBytesPath = "/proc/sys/kernel/keys/root_maxbytes"
-	const minBytes uint64 = 25000000
-	bytes, err := ioutil.ReadFile(maxBytesPath)
-	if err != nil {
-		glog.Errorf("Cannot read keys bytes in %s", maxBytesPath)
-	} else {
-		fields := strings.Fields(string(bytes))
-		nByte, _ := strconv.ParseUint(fields[0], 10, 64)
-		if nByte < minBytes {
-			glog.Infof("Setting keys bytes in %s to %d", maxBytesPath, minBytes)
-			err = ioutil.WriteFile(maxBytesPath, []byte(fmt.Sprintf("%d", uint64(minBytes))), 0644)
-			if err != nil {
-				glog.Warningf("Failed to update %s: %v", maxBytesPath, err)
-			}
-		}
-	}
 
 	// process pods and exit.
 	if runOnce {

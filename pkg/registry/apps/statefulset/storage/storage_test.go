@@ -76,7 +76,8 @@ func validNewStatefulSet() *apps.StatefulSet {
 					DNSPolicy:     api.DNSClusterFirst,
 				},
 			},
-			Replicas: 7,
+			Replicas:       7,
+			UpdateStrategy: apps.StatefulSetUpdateStrategy{Type: apps.RollingUpdateStatefulSetStrategyType},
 		},
 		Status: apps.StatefulSetStatus{},
 	}
@@ -185,6 +186,14 @@ func TestWatch(t *testing.T) {
 			{"metadata.name": "bar"},
 		},
 	)
+}
+
+func TestCategories(t *testing.T) {
+	storage, _, server := newStorage(t)
+	defer server.Terminate(t)
+	defer storage.Store.DestroyFunc()
+	expected := []string{"all"}
+	registrytest.AssertCategories(t, storage, expected)
 }
 
 // TODO: Test generation number.

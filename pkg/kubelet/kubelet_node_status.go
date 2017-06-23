@@ -26,15 +26,18 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/conversion"
 	"k8s.io/apimachinery/pkg/types"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
-	"k8s.io/kubernetes/pkg/api/v1"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	k8s_api_v1 "k8s.io/kubernetes/pkg/api/v1"
 	v1helper "k8s.io/kubernetes/pkg/api/v1/helper"
 	"k8s.io/kubernetes/pkg/cloudprovider"
+	"k8s.io/kubernetes/pkg/features"
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 	"k8s.io/kubernetes/pkg/kubelet/cadvisor"
 	"k8s.io/kubernetes/pkg/kubelet/events"
@@ -208,7 +211,7 @@ func (kl *Kubelet) initialNode() (*v1.Node, error) {
 	if len(kl.kubeletConfiguration.RegisterWithTaints) > 0 {
 		taints := make([]v1.Taint, len(kl.kubeletConfiguration.RegisterWithTaints))
 		for i := range kl.kubeletConfiguration.RegisterWithTaints {
-			if err := v1.Convert_api_Taint_To_v1_Taint(&kl.kubeletConfiguration.RegisterWithTaints[i], &taints[i], nil); err != nil {
+			if err := k8s_api_v1.Convert_api_Taint_To_v1_Taint(&kl.kubeletConfiguration.RegisterWithTaints[i], &taints[i], nil); err != nil {
 				return nil, err
 			}
 		}
@@ -553,22 +556,24 @@ func (kl *Kubelet) setNodeStatusMachineInfo(node *v1.Node) {
 		node.Status.NodeInfo.BootID = info.BootID
 	}
 
-	rootfs, err := kl.GetCachedRootFsInfo()
-	if err != nil {
-		node.Status.Capacity[v1.ResourceStorage] = resource.MustParse("0Gi")
-	} else {
-		for rName, rCap := range cadvisor.StorageScratchCapacityFromFsInfo(rootfs) {
-			node.Status.Capacity[rName] = rCap
-		}
-	}
-
-	if hasDedicatedImageFs, _ := kl.HasDedicatedImageFs(); hasDedicatedImageFs {
-		imagesfs, err := kl.ImagesFsInfo()
+	if utilfeature.DefaultFeatureGate.Enabled(features.LocalStorageCapacityIsolation) {
+		rootfs, err := kl.GetCachedRootFsInfo()
 		if err != nil {
-			node.Status.Capacity[v1.ResourceStorageOverlay] = resource.MustParse("0Gi")
+			node.Status.Capacity[v1.ResourceStorageScratch] = resource.MustParse("0Gi")
 		} else {
-			for rName, rCap := range cadvisor.StorageOverlayCapacityFromFsInfo(imagesfs) {
+			for rName, rCap := range cadvisor.StorageScratchCapacityFromFsInfo(rootfs) {
 				node.Status.Capacity[rName] = rCap
+			}
+		}
+
+		if hasDedicatedImageFs, _ := kl.HasDedicatedImageFs(); hasDedicatedImageFs {
+			imagesfs, err := kl.ImagesFsInfo()
+			if err != nil {
+				node.Status.Capacity[v1.ResourceStorageOverlay] = resource.MustParse("0Gi")
+			} else {
+				for rName, rCap := range cadvisor.StorageOverlayCapacityFromFsInfo(imagesfs) {
+					node.Status.Capacity[rName] = rCap
+				}
 			}
 		}
 	}

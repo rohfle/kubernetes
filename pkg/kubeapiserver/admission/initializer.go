@@ -22,7 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
-	"k8s.io/kubernetes/pkg/apis/admissionregistration"
+	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	informers "k8s.io/kubernetes/pkg/client/informers/informers_generated/internalversion"
 	"k8s.io/kubernetes/pkg/quota"
@@ -33,6 +33,12 @@ import (
 // WantsInternalKubeClientSet defines a function which sets ClientSet for admission plugins that need it
 type WantsInternalKubeClientSet interface {
 	SetInternalKubeClientSet(internalclientset.Interface)
+	admission.Validator
+}
+
+// WantsExternalKubeClientSet defines a function which sets ClientSet for admission plugins that need it
+type WantsExternalKubeClientSet interface {
+	SetExternalKubeClientSet(clientset.Interface)
 	admission.Validator
 }
 
@@ -76,32 +82,21 @@ type WantsClientCert interface {
 	SetClientCert(cert, key []byte)
 }
 
-// WantsWebhookSource defines a function that accepts a webhook lister for the
-// dynamic webhook plugin.
-type WantsWebhookSource interface {
-	SetWebhookSource(WebhookSource)
-}
-
 // ServiceResolver knows how to convert a service reference into an actual
 // location.
 type ServiceResolver interface {
 	ResolveEndpoint(namespace, name string) (*url.URL, error)
 }
 
-// WebhookSource can list dynamic webhook plugins.
-type WebhookSource interface {
-	List() ([]admissionregistration.ExternalAdmissionHook, error)
-}
-
 type PluginInitializer struct {
 	internalClient  internalclientset.Interface
+	externalClient  clientset.Interface
 	informers       informers.SharedInformerFactory
 	authorizer      authorizer.Authorizer
 	cloudConfig     []byte
 	restMapper      meta.RESTMapper
 	quotaRegistry   quota.Registry
 	serviceResolver ServiceResolver
-	webhookSource   WebhookSource
 
 	// for proving we are apiserver in call-outs
 	clientCert []byte
@@ -113,14 +108,18 @@ var _ admission.PluginInitializer = &PluginInitializer{}
 // NewPluginInitializer constructs new instance of PluginInitializer
 // TODO: switch these parameters to use the builder pattern or just make them
 // all public, this construction method is pointless boilerplate.
-func NewPluginInitializer(internalClient internalclientset.Interface,
+func NewPluginInitializer(
+	internalClient internalclientset.Interface,
+	externalClient clientset.Interface,
 	sharedInformers informers.SharedInformerFactory,
 	authz authorizer.Authorizer,
 	cloudConfig []byte,
 	restMapper meta.RESTMapper,
-	quotaRegistry quota.Registry) *PluginInitializer {
+	quotaRegistry quota.Registry,
+) *PluginInitializer {
 	return &PluginInitializer{
 		internalClient: internalClient,
+		externalClient: externalClient,
 		informers:      sharedInformers,
 		authorizer:     authz,
 		cloudConfig:    cloudConfig,
@@ -143,18 +142,15 @@ func (i *PluginInitializer) SetClientCert(cert, key []byte) *PluginInitializer {
 	return i
 }
 
-// SetWebhookSource sets the webhook source-- admittedly this is probably
-// specific to the external admission hook plugin.
-func (i *PluginInitializer) SetWebhookSource(w WebhookSource) *PluginInitializer {
-	i.webhookSource = w
-	return i
-}
-
 // Initialize checks the initialization interfaces implemented by each plugin
 // and provide the appropriate initialization data
 func (i *PluginInitializer) Initialize(plugin admission.Interface) {
 	if wants, ok := plugin.(WantsInternalKubeClientSet); ok {
 		wants.SetInternalKubeClientSet(i.internalClient)
+	}
+
+	if wants, ok := plugin.(WantsExternalKubeClientSet); ok {
+		wants.SetExternalKubeClientSet(i.externalClient)
 	}
 
 	if wants, ok := plugin.(WantsInternalKubeInformerFactory); ok {
@@ -189,12 +185,5 @@ func (i *PluginInitializer) Initialize(plugin admission.Interface) {
 			panic("An admission plugin wants a client cert/key, but they were not provided.")
 		}
 		wants.SetClientCert(i.clientCert, i.clientKey)
-	}
-
-	if wants, ok := plugin.(WantsWebhookSource); ok {
-		if i.webhookSource == nil {
-			panic("An admission plugin wants a webhook source, but it was not provided.")
-		}
-		wants.SetWebhookSource(i.webhookSource)
 	}
 }

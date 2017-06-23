@@ -25,10 +25,10 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/errors"
 	utiltrace "k8s.io/apiserver/pkg/util/trace"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm/predicates"
 	schedulerapi "k8s.io/kubernetes/plugin/pkg/scheduler/api"
@@ -178,7 +178,7 @@ func findNodesThatFit(
 		// Create filtered list with enough space to avoid growing it
 		// and allow assigning.
 		filtered = make([]*v1.Node, len(nodes))
-		errs := []error{}
+		errs := errors.MessageCountMap{}
 		var predicateResultLock sync.Mutex
 		var filteredLen int32
 
@@ -189,7 +189,7 @@ func findNodesThatFit(
 			fits, failedPredicates, err := podFitsOnNode(pod, meta, nodeNameToInfo[nodeName], predicateFuncs, ecache)
 			if err != nil {
 				predicateResultLock.Lock()
-				errs = append(errs, err)
+				errs[err.Error()]++
 				predicateResultLock.Unlock()
 				return
 			}
@@ -204,7 +204,7 @@ func findNodesThatFit(
 		workqueue.Parallelize(16, len(nodes), checkNode)
 		filtered = filtered[:filteredLen]
 		if len(errs) > 0 {
-			return []*v1.Node{}, FailedPredicateMap{}, errors.NewAggregate(errs)
+			return []*v1.Node{}, FailedPredicateMap{}, errors.CreateAggregateFromMessageCountMap(errs)
 		}
 	}
 

@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -36,7 +37,6 @@ import (
 	"k8s.io/client-go/transport"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/apis/batch"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
@@ -60,7 +60,7 @@ const (
 	// depending on the number of nodes in the underlying cluster.
 	nodeCountPerNamespace = 100
 	// How many threads will be used to create/delete services during this test.
-	serviceOperationsParallelism = 5
+	serviceOperationsParallelism = 1
 )
 
 var randomKind = schema.GroupKind{Kind: "Random"}

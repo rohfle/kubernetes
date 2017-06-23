@@ -20,8 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -31,6 +31,7 @@ import (
 
 	"math"
 
+	"k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	apimachineryvalidation "k8s.io/apimachinery/pkg/api/validation"
@@ -46,7 +47,7 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/helper"
 	apiservice "k8s.io/kubernetes/pkg/api/service"
-	"k8s.io/kubernetes/pkg/api/v1"
+	k8s_api_v1 "k8s.io/kubernetes/pkg/api/v1"
 	v1helper "k8s.io/kubernetes/pkg/api/v1/helper"
 	"k8s.io/kubernetes/pkg/capabilities"
 	"k8s.io/kubernetes/pkg/features"
@@ -591,6 +592,14 @@ func validateVolumeSource(source *api.VolumeSource, fldPath *field.Path) field.E
 			allErrs = append(allErrs, validateAzureDisk(source.AzureDisk, fldPath.Child("azureDisk"))...)
 		}
 	}
+	if source.StorageOS != nil {
+		if numVolumes > 0 {
+			allErrs = append(allErrs, field.Forbidden(fldPath.Child("storageos"), "may not specify more than 1 volume type"))
+		} else {
+			numVolumes++
+			allErrs = append(allErrs, validateStorageOSVolumeSource(source.StorageOS, fldPath.Child("storageos"))...)
+		}
+	}
 	if source.Projected != nil {
 		if numVolumes > 0 {
 			allErrs = append(allErrs, field.Forbidden(fldPath.Child("projected"), "may not specify more than 1 volume type"))
@@ -619,7 +628,10 @@ func validateHostPathVolumeSource(hostPath *api.HostPathVolumeSource, fldPath *f
 	allErrs := field.ErrorList{}
 	if len(hostPath.Path) == 0 {
 		allErrs = append(allErrs, field.Required(fldPath.Child("path"), ""))
+		return allErrs
 	}
+
+	allErrs = append(allErrs, validatePathNoBacksteps(hostPath.Path, fldPath.Child("path"))...)
 	return allErrs
 }
 
@@ -950,8 +962,18 @@ func validateLocalDescendingPath(targetPath string, fldPath *field.Path) field.E
 		allErrs = append(allErrs, field.Invalid(fldPath, targetPath, "must be a relative path"))
 	}
 
-	// TODO: this assumes the OS of apiserver & nodes are the same
-	parts := strings.Split(targetPath, string(os.PathSeparator))
+	allErrs = append(allErrs, validatePathNoBacksteps(targetPath, fldPath)...)
+
+	return allErrs
+}
+
+// validatePathNoBacksteps makes sure the targetPath does not have any `..` path elements when split
+//
+// This assumes the OS of the apiserver and the nodes are the same. The same check should be done
+// on the node to ensure there are no backsteps.
+func validatePathNoBacksteps(targetPath string, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	parts := strings.Split(filepath.ToSlash(targetPath), "/")
 	for _, item := range parts {
 		if item == ".." {
 			allErrs = append(allErrs, field.Invalid(fldPath, targetPath, "must not contain '..'"))
@@ -1112,6 +1134,48 @@ func validateLocalVolumeSource(ls *api.LocalVolumeSource, fldPath *field.Path) f
 	allErrs := field.ErrorList{}
 	if ls.Path == "" {
 		allErrs = append(allErrs, field.Required(fldPath.Child("path"), ""))
+		return allErrs
+	}
+
+	allErrs = append(allErrs, validatePathNoBacksteps(ls.Path, fldPath.Child("path"))...)
+	return allErrs
+}
+
+func validateStorageOSVolumeSource(storageos *api.StorageOSVolumeSource, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	if len(storageos.VolumeName) == 0 {
+		allErrs = append(allErrs, field.Required(fldPath.Child("volumeName"), ""))
+	} else {
+		allErrs = append(allErrs, ValidateDNS1123Label(storageos.VolumeName, fldPath.Child("volumeName"))...)
+	}
+	if len(storageos.VolumeNamespace) > 0 {
+		allErrs = append(allErrs, ValidateDNS1123Label(storageos.VolumeNamespace, fldPath.Child("volumeNamespace"))...)
+	}
+	if storageos.SecretRef != nil {
+		if len(storageos.SecretRef.Name) == 0 {
+			allErrs = append(allErrs, field.Required(fldPath.Child("secretRef", "name"), ""))
+		}
+	}
+	return allErrs
+}
+
+func validateStorageOSPersistentVolumeSource(storageos *api.StorageOSPersistentVolumeSource, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	if len(storageos.VolumeName) == 0 {
+		allErrs = append(allErrs, field.Required(fldPath.Child("volumeName"), ""))
+	} else {
+		allErrs = append(allErrs, ValidateDNS1123Label(storageos.VolumeName, fldPath.Child("volumeName"))...)
+	}
+	if len(storageos.VolumeNamespace) > 0 {
+		allErrs = append(allErrs, ValidateDNS1123Label(storageos.VolumeNamespace, fldPath.Child("volumeNamespace"))...)
+	}
+	if storageos.SecretRef != nil {
+		if len(storageos.SecretRef.Name) == 0 {
+			allErrs = append(allErrs, field.Required(fldPath.Child("secretRef", "name"), ""))
+		}
+		if len(storageos.SecretRef.Namespace) == 0 {
+			allErrs = append(allErrs, field.Required(fldPath.Child("secretRef", "namespace"), ""))
+		}
 	}
 	return allErrs
 }
@@ -1325,6 +1389,14 @@ func ValidatePersistentVolume(pv *api.PersistentVolume) field.ErrorList {
 			}
 		}
 	}
+	if pv.Spec.StorageOS != nil {
+		if numVolumes > 0 {
+			allErrs = append(allErrs, field.Forbidden(specPath.Child("storageos"), "may not specify more than 1 volume type"))
+		} else {
+			numVolumes++
+			allErrs = append(allErrs, validateStorageOSPersistentVolumeSource(pv.Spec.StorageOS, specPath.Child("storageos"))...)
+		}
+	}
 
 	if numVolumes == 0 {
 		allErrs = append(allErrs, field.Required(specPath, "must specify a volume type"))
@@ -1483,6 +1555,7 @@ func validateContainerPorts(ports []api.ContainerPort, fldPath *field.Path) fiel
 	return allErrs
 }
 
+// ValidateEnv validates env vars
 func ValidateEnv(vars []api.EnvVar, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
@@ -1653,8 +1726,9 @@ func validateContainerResourceDivisor(rName string, divisor resource.Quantity, f
 func validateConfigMapKeySelector(s *api.ConfigMapKeySelector, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
-	if len(s.Name) == 0 {
-		allErrs = append(allErrs, field.Required(fldPath.Child("name"), ""))
+	nameFn := ValidateNameFunc(ValidateSecretName)
+	for _, msg := range nameFn(s.Name, false) {
+		allErrs = append(allErrs, field.Invalid(fldPath.Child("name"), s.Name, msg))
 	}
 	if len(s.Key) == 0 {
 		allErrs = append(allErrs, field.Required(fldPath.Child("key"), ""))
@@ -1670,8 +1744,9 @@ func validateConfigMapKeySelector(s *api.ConfigMapKeySelector, fldPath *field.Pa
 func validateSecretKeySelector(s *api.SecretKeySelector, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
-	if len(s.Name) == 0 {
-		allErrs = append(allErrs, field.Required(fldPath.Child("name"), ""))
+	nameFn := ValidateNameFunc(ValidateSecretName)
+	for _, msg := range nameFn(s.Name, false) {
+		allErrs = append(allErrs, field.Invalid(fldPath.Child("name"), s.Name, msg))
 	}
 	if len(s.Key) == 0 {
 		allErrs = append(allErrs, field.Required(fldPath.Child("key"), ""))
@@ -1917,6 +1992,9 @@ func validateContainers(containers []api.Container, volumes sets.String, fldPath
 		} else {
 			allNames.Insert(ctr.Name)
 		}
+		// TODO: do not validate leading and trailing whitespace to preserve backward compatibility.
+		// for example: https://github.com/openshift/origin/issues/14659 image = " " is special token in pod template
+		// others may have done similar
 		if len(ctr.Image) == 0 {
 			allErrs = append(allErrs, field.Required(idxPath.Child("image"), ""))
 		}
@@ -1940,6 +2018,7 @@ func validateContainers(containers []api.Container, volumes sets.String, fldPath
 		allErrs = append(allErrs, validateProbe(ctr.ReadinessProbe, idxPath.Child("readinessProbe"))...)
 		allErrs = append(allErrs, validateContainerPorts(ctr.Ports, idxPath.Child("ports"))...)
 		allErrs = append(allErrs, ValidateEnv(ctr.Env, idxPath.Child("env"))...)
+		allErrs = append(allErrs, ValidateEnvFrom(ctr.EnvFrom, idxPath.Child("envFrom"))...)
 		allErrs = append(allErrs, ValidateVolumeMounts(ctr.VolumeMounts, volumes, idxPath.Child("volumeMounts"))...)
 		allErrs = append(allErrs, validatePullPolicy(ctr.ImagePullPolicy, idxPath.Child("imagePullPolicy"))...)
 		allErrs = append(allErrs, ValidateResourceRequirements(&ctr.Resources, idxPath.Child("resources"))...)
@@ -2105,7 +2184,7 @@ func ValidateHostAliases(hostAliases []api.HostAlias, fldPath *field.Path) field
 			allErrs = append(allErrs, field.Invalid(fldPath.Child("ip"), hostAlias.IP, "must be valid IP address"))
 		}
 		for _, hostname := range hostAlias.Hostnames {
-			allErrs = append(allErrs, ValidateDNS1123Label(hostname, fldPath.Child("hostnames"))...)
+			allErrs = append(allErrs, ValidateDNS1123Subdomain(hostname, fldPath.Child("hostnames"))...)
 		}
 	}
 	return allErrs
@@ -2156,12 +2235,33 @@ func ValidateTolerations(tolerations []api.Toleration, fldPath *field.Path) fiel
 	return allErrors
 }
 
+// validateContainersOnlyForPod does additional validation for containers on a pod versus a pod template
+// it only does additive validation of fields not covered in validateContainers
+func validateContainersOnlyForPod(containers []api.Container, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	for i, ctr := range containers {
+		idxPath := fldPath.Index(i)
+		if len(ctr.Image) != len(strings.TrimSpace(ctr.Image)) {
+			allErrs = append(allErrs, field.Invalid(idxPath.Child("image"), ctr.Image, "must not have leading or trailing whitespace"))
+		}
+	}
+	return allErrs
+}
+
 // ValidatePod tests if required fields in the pod are set.
 func ValidatePod(pod *api.Pod) field.ErrorList {
 	fldPath := field.NewPath("metadata")
 	allErrs := ValidateObjectMeta(&pod.ObjectMeta, true, ValidatePodName, fldPath)
 	allErrs = append(allErrs, ValidatePodSpecificAnnotations(pod.ObjectMeta.Annotations, &pod.Spec, fldPath.Child("annotations"))...)
 	allErrs = append(allErrs, ValidatePodSpec(&pod.Spec, field.NewPath("spec"))...)
+
+	// we do additional validation only pertinent for pods and not pod templates
+	// this was done to preserve backwards compatibility
+	specPath := field.NewPath("spec")
+
+	allErrs = append(allErrs, validateContainersOnlyForPod(pod.Spec.Containers, specPath.Child("containers"))...)
+	allErrs = append(allErrs, validateContainersOnlyForPod(pod.Spec.InitContainers, specPath.Child("initContainers"))...)
+
 	return allErrs
 }
 
@@ -2283,7 +2383,7 @@ func ValidateAvoidPodsInNodeAnnotations(annotations map[string]string, fldPath *
 		return allErrs
 	}
 	var avoids api.AvoidPods
-	if err := v1.Convert_v1_AvoidPods_To_api_AvoidPods(&v1Avoids, &avoids, nil); err != nil {
+	if err := k8s_api_v1.Convert_v1_AvoidPods_To_api_AvoidPods(&v1Avoids, &avoids, nil); err != nil {
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("AvoidPods"), api.PreferAvoidPodsAnnotationKey, err.Error()))
 		return allErrs
 	}
@@ -2549,6 +2649,10 @@ func ValidateContainerUpdates(newContainers, oldContainers []api.Container, fldP
 	for i, ctr := range newContainers {
 		if len(ctr.Image) == 0 {
 			allErrs = append(allErrs, field.Required(fldPath.Index(i).Child("image"), ""))
+		}
+		// this is only called from ValidatePodUpdate so its safe to check leading/trailing whitespace.
+		if len(strings.TrimSpace(ctr.Image)) != len(ctr.Image) {
+			allErrs = append(allErrs, field.Invalid(fldPath.Index(i).Child("image"), ctr.Image, "must not have leading or trailing whitespace"))
 		}
 	}
 	return allErrs, false
@@ -3299,6 +3403,7 @@ func validateResourceName(value string, fldPath *field.Path) field.ErrorList {
 // Refer to docs/design/resources.md for more details.
 func validateContainerResourceName(value string, fldPath *field.Path) field.ErrorList {
 	allErrs := validateResourceName(value, fldPath)
+
 	if len(strings.Split(value, "/")) == 1 {
 		if !helper.IsStandardContainerResourceName(value) {
 			return append(allErrs, field.Invalid(fldPath, value, "must be a standard resource for containers"))
