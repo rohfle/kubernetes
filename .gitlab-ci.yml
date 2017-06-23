@@ -77,4 +77,3 @@ release:
       - ci.vars
       - release.env
       - e2e.env
-      - linux-amd64
