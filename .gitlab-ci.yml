@@ -1,6 +1,8 @@
 image: docker:17.05.0
 stages:
   - build
+  - release
+
 before_script:
   - apk update
   - apk add bash tar rsync git curl make file
@@ -13,6 +15,7 @@ before_script:
   - sed -i -e '/ windows\/386/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e '/ windows\/amd64/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e 's/kube::release::package_tarballs//g' ./build/release.sh
+
 build:
   stage: build
   variables:
@@ -49,3 +52,29 @@ build-e2e:
     - docker login -u "gitlab-ci-token" -p "$CI_JOB_TOKEN" $CI_REGISTRY
     - docker build -t "$CI_REGISTRY_IMAGE/kubernetes-e2e:$KUBE_DOCKER_IMAGE_TAG" ./e2e/
     - docker push "$CI_REGISTRY_IMAGE/kubernetes-e2e:$KUBE_DOCKER_IMAGE_TAG"
+    - echo export KUBERNETES_E2E_IMAGE="$CI_REGISTRY_IMAGE/kubernetes-e2e" > e2e.env
+    - echo export KUBERNETES_E2E_TAG="$KUBE_DOCKER_IMAGE_TAG" >> e2e.env
+  artifacts:
+    name: "${CI_JOB_NAME}.${CI_PIPELINE_ID}.${CI_JOB_ID}"
+    expire_in: 1 weeks
+    paths:
+      - e2e.env
+
+
+release:
+  stage: release
+  script:
+    - cat e2e.env
+    - cat release.env
+    - curl -X POST
+        -F token=$CI_JOB_TOKEN
+        -F ref=ci-master
+        https://gitlab.cncf.ci/api/v4/projects/2/trigger/pipeline
+  artifacts:
+    name: "${CI_JOB_NAME}.${CI_PIPELINE_ID}.${CI_JOB_ID}"
+    expire_in: 1 weeks
+    paths:
+      - ci.vars
+      - release.env
+      - e2e.env
+      - linux-amd64
