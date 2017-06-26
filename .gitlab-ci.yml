@@ -66,6 +66,10 @@ release:
   script:
     - cat e2e.env
     - cat release.env
+    - curl -X POST
+        -F token=$CI_JOB_TOKEN
+        -F ref=ci-master
+        https://gitlab.cncf.ci/api/v4/projects/2/trigger/pipeline
   artifacts:
     name: "${CI_JOB_NAME}.${CI_PIPELINE_ID}.${CI_JOB_ID}"
     expire_in: 1 weeks
@@ -73,4 +77,3 @@ release:
       - ci.vars
       - release.env
       - e2e.env
-      - linux-amd64
