@@ -205,6 +205,7 @@ pkg/fieldpath
 pkg/fields
 pkg/hyperkube
 pkg/kubectl/cmd/util/openapi
+pkg/kubectl/util/term
 pkg/kubelet/apis/cri
 pkg/kubelet/apis/stats/v1alpha1
 pkg/kubelet/container
@@ -238,8 +239,6 @@ pkg/registry/core/service/ipallocator/controller
 pkg/registry/core/service/ipallocator/storage
 pkg/registry/core/serviceaccount
 pkg/registry/extensions/podsecuritypolicy/storage
-pkg/registry/extensions/thirdpartyresource
-pkg/registry/extensions/thirdpartyresource/storage
 pkg/registry/rbac/clusterrole/storage
 pkg/registry/rbac/clusterrolebinding/storage
 pkg/registry/rbac/role/storage
@@ -499,7 +498,6 @@ test/integration/quota
 test/integration/secrets
 test/integration/serviceaccount
 test/integration/storageclasses
-test/integration/thirdparty
 test/integration/ttlcontroller
 test/soak/cauldron
 test/soak/serve_hostnames
