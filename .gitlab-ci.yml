@@ -35,7 +35,6 @@ build:
     - docker push "$CI_REGISTRY_IMAGE/kube-scheduler-amd64:$KUBE_DOCKER_IMAGE_TAG"
     - docker push "$CI_REGISTRY_IMAGE/kube-proxy-amd64:$KUBE_DOCKER_IMAGE_TAG"
     - docker push "$CI_REGISTRY_IMAGE/kube-aggregator-amd64:$KUBE_DOCKER_IMAGE_TAG"
-    - docker push "$CI_REGISTRY_IMAGE/cloud-controller-manager-amd64:$KUBE_DOCKER_IMAGE_TAG"
     - cp -a _output/dockerized/bin/linux/amd64 linux-amd64
     - echo export TF_VAR_kubelet_image_url="$CI_REGISTRY_IMAGE/hyperkube-amd64" > ci.vars
     - echo export TF_VAR_kubelet_image_tag="$KUBE_DOCKER_IMAGE_TAG" >> ci.vars
@@ -51,8 +50,6 @@ build:
     - echo export KUBE_PROXY_TAG="$KUBE_DOCKER_IMAGE_TAG" >> release.env
     - echo export KUBE_AGGREGATOR_IMAGE="$CI_REGISTRY_IMAGE/kube-aggregator-amd64" >> release.env
     - echo export KUBE_AGGREGATOR_TAG="$KUBE_DOCKER_IMAGE_TAG" >> release.env
-    - echo export CLOUD_CONTROLLER_IMAGE="$CI_REGISTRY_IMAGE/cloud-controller-manager-amd64" >> release.env
-    - echo export CLOUD_CONTROLLER_TAG="$KUBE_DOCKER_IMAGE_TAG" >> release.env
     - echo export KUBE_BINARIES_URL=https://gitlab.cncf.ci/kubernetes/kubernetes/-/jobs/${CI_JOB_ID}/artifacts/raw/linux-amd64/ >> release.env
     - cat release.env
   artifacts:
