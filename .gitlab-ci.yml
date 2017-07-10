@@ -12,7 +12,7 @@ before_script:
   - sed -i -e '/ darwin\/386/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e '/ windows\/386/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e '/ windows\/amd64/ s/^/#/' hack/lib/golang.sh 
-  - sed -i -e 's/kube::release::package_tarballs//g' ./build/release.sh
+  - sed -i -e 's/kube::release::package_tarballs/kube::release::package_server_tarballs/g' ./build/release.sh
 build:
   stage: build
   variables:
@@ -24,6 +24,7 @@ build:
     FEDERATION: "false"
   script:
     - ./build/release.sh || sleep 99999
+    - docker images | grep kubernetes/kubernetes
     - docker login -u "gitlab-ci-token" -p "$CI_JOB_TOKEN" $CI_REGISTRY
     - docker push "$CI_REGISTRY_IMAGE/hyperkube-amd64:$KUBE_DOCKER_IMAGE_TAG"
     - cp -a _output/dockerized/bin/linux/amd64 linux-amd64
