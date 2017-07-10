@@ -1,5 +1,4 @@
 #!/bin/bash
-
 set -e
 
 # Run conformance test
@@ -16,4 +15,3 @@ GINKGO_PARALLEL=y go run hack/e2e.go -v --test --test_args="--ginkgo.focus=\[Con
 
 # ... and finish up with remaining tests in serial
 go run hack/e2e.go -v --test --test_args="--ginkgo.focus=\[Serial\].*\[Conformance\]"
-
