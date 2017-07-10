@@ -21,12 +21,17 @@ build:
   variables:
     KUBE_DOCKER_REGISTRY: "${CI_REGISTRY_IMAGE}"
     KUBE_DOCKER_IMAGE_TAG: "${CI_COMMIT_REF_SLUG}.${CI_PIPELINE_ID}.${CI_JOB_ID}"
+    KUBE_BUILD_HYPERKUBE: "n"
     KUBE_RELEASE_RUN_TESTS: "n"
     KUBE_FASTBUILD: "false"
     KUBE_VERBOSE: "0"
     FEDERATION: "false"
   script:
     - ./build/release.sh || sleep 99999
+    - ARCH=amd64
+        REGISTRY=${CI_REGISTRY_IMAGE}
+        VERSION=${KUBE_DOCKER_IMAGE_TAG}
+        make -C cluster/images/hypercube/ build
     - docker images | grep kubernetes/kubernetes
     - docker login -u "gitlab-ci-token" -p "$CI_JOB_TOKEN" $CI_REGISTRY
     - docker push "$CI_REGISTRY_IMAGE/hyperkube-amd64:$KUBE_DOCKER_IMAGE_TAG"
