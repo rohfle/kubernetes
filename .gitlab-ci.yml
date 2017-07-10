@@ -31,7 +31,7 @@ build:
     - ARCH=amd64
         REGISTRY=${CI_REGISTRY_IMAGE}
         VERSION=${KUBE_DOCKER_IMAGE_TAG}
-        make -C cluster/images/hypercube/ build
+        make -C cluster/images/hyperkube/ build
     - docker images | grep kubernetes/kubernetes
     - docker login -u "gitlab-ci-token" -p "$CI_JOB_TOKEN" $CI_REGISTRY
     - docker push "$CI_REGISTRY_IMAGE/hyperkube-amd64:$KUBE_DOCKER_IMAGE_TAG"
