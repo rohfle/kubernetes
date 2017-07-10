@@ -1,6 +1,8 @@
 image: docker:17.05.0
 stages:
   - build
+  - release
+
 before_script:
   - apk update
   - apk add bash tar rsync git curl make file
