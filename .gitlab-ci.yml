@@ -93,7 +93,7 @@ release:
     - cat release.env
     - curl -X POST
         -F token=$CI_JOB_TOKEN
-        -F ref=ci-stable-v0.1.0
+        -F ref=ci-master-v0.1.0
         https://gitlab.cncf.ci/api/v4/projects/2/trigger/pipeline
   artifacts:
     name: "${CI_JOB_NAME}.${CI_PIPELINE_ID}.${CI_JOB_ID}"
