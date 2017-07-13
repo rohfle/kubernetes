@@ -3,7 +3,7 @@ stages:
   - build
 
 variables:
-  CI_TARGET_REF: v1.8.0-alpha.0
+  CI_TARGET_REF: v1.8.0-alpha.2
 
 before_script:
   - apk update
