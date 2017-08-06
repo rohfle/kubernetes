@@ -6,6 +6,7 @@ stages:
 before_script:
   - apk update
   - apk add bash tar rsync git curl make file
+  - docker rmi -f $(docker images -q)
   - echo "We are only going to build for amd64 for this demo"
   - sed -i -e '/ linux\/arm/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e '/ linux\/s390/ s/^/#/' hack/lib/golang.sh 
