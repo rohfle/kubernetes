@@ -27,9 +27,6 @@ build:
     KUBE_VERBOSE: "0"
     FEDERATION: "false"
   script:
-    - echo 'test'
-    - sleep 10000
-    - docker rmi -f $(docker images -q)
     - ./build/release.sh || sleep 99999
     - docker images | grep kubernetes/kubernetes
     - docker login -u "gitlab-ci-token" -p "$CI_JOB_TOKEN" $CI_REGISTRY
