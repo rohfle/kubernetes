@@ -28,7 +28,7 @@ build:
     KUBE_VERBOSE: "0"
     FEDERATION: "false"
   script:
-    - ./build/release.sh || sleep 99999
+    - ./build/release.sh 
     - docker images | grep kubernetes/kubernetes
     - docker login -u "gitlab-ci-token" -p "$CI_JOB_TOKEN" $CI_REGISTRY
     - docker push "$CI_REGISTRY_IMAGE/hyperkube-amd64:$KUBE_DOCKER_IMAGE_TAG"
