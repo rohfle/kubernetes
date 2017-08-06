@@ -4,6 +4,7 @@ stages:
   - release
 
 before_script:
+  - echo 'TEST'
   - apk update
   - apk add bash tar rsync git curl make file
   - echo "We are only going to build for amd64 for this demo"
