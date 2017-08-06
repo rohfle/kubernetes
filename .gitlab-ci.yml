@@ -4,7 +4,6 @@ stages:
   - release
 
 before_script:
-  - docker rmi -f $(docker images -q)
   - apk update
   - apk add bash tar rsync git curl make file
   - echo "We are only going to build for amd64 for this demo"
@@ -16,6 +15,7 @@ before_script:
   - sed -i -e '/ darwin\/386/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e '/ windows\/386/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e '/ windows\/amd64/ s/^/#/' hack/lib/golang.sh 
+  - docker rmi -f $(docker images -q)
 
 build:
   stage: build
