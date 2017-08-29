@@ -57,7 +57,7 @@ build:
   artifacts:
     name: "${CI_JOB_NAME}.${CI_PIPELINE_ID}.${CI_JOB_ID}"
     when: always
-    expire_in: 1 weeks
+    expire_in: 4 weeks
     paths:
       - ci.vars
       - release.env
@@ -76,7 +76,7 @@ build-e2e:
     - echo export KUBERNETES_E2E_TAG="$KUBE_DOCKER_IMAGE_TAG" >> e2e.env
   artifacts:
     name: "${CI_JOB_NAME}.${CI_PIPELINE_ID}.${CI_JOB_ID}"
-    expire_in: 1 weeks
+    expire_in: 4 weeks
     paths:
       - e2e.env
 
@@ -91,7 +91,7 @@ release:
         https://gitlab.cncf.ci/api/v4/projects/2/trigger/pipeline
   artifacts:
     name: "${CI_JOB_NAME}.${CI_PIPELINE_ID}.${CI_JOB_ID}"
-    expire_in: 1 weeks
+    expire_in: 4 weeks
     paths:
       - ci.vars
       - release.env
