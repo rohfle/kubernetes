@@ -22,7 +22,7 @@ go_library(
         "//pkg/client/metrics/prometheus:go_default_library",
         "//pkg/kubelet/cadvisor/testing:go_default_library",
         "//pkg/kubelet/cm:go_default_library",
-        "//pkg/kubelet/dockershim/libdocker:go_default_library",
+        "//pkg/kubelet/dockershim:go_default_library",
         "//pkg/kubemark:go_default_library",
         "//pkg/util/iptables/testing:go_default_library",
         "//pkg/util/sysctl/testing:go_default_library",
