@@ -55,7 +55,7 @@ build-e2e:
     paths:
       - e2e.env
       
-compile:
+container:
   stage: package
   script:
     - docker images | grep kubernetes/kubernetes
