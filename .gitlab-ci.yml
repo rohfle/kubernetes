@@ -89,6 +89,4 @@ container:
     when: always
     expire_in: 1 weeks
     paths:
-      - ci.vars
       - release.env
-      - linux-amd64
