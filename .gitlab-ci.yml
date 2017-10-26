@@ -1,6 +1,6 @@
 image: docker:17.05.0
 stages:
-  - container
+  - build
   - release
 
 before_script:
@@ -17,7 +17,7 @@ before_script:
   - sed -i -e '/ windows\/amd64/ s/^/#/' hack/lib/golang.sh 
 
 container:
-  stage: container
+  stage: build
   variables:
     KUBE_DOCKER_REGISTRY: "${CI_REGISTRY_IMAGE}"
     KUBE_DOCKER_IMAGE_TAG: "${CI_COMMIT_REF_SLUG}.${CI_PIPELINE_ID}.${CI_JOB_ID}"
