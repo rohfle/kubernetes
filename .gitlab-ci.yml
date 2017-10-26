@@ -18,7 +18,7 @@ before_script:
   - sed -i -e '/ windows\/amd64/ s/^/#/' hack/lib/golang.sh 
 
 
-build:
+container:
   stage: build
   variables:
     KUBE_DOCKER_REGISTRY: "${CI_REGISTRY_IMAGE}"
