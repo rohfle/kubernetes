@@ -39,23 +39,6 @@ compile:
       - release.env
       - linux-amd64
 
-build-e2e:
-  stage: build
-  variables:
-    KUBE_DOCKER_REGISTRY: "${CI_REGISTRY_IMAGE}"
-    KUBE_DOCKER_IMAGE_TAG: "${CI_COMMIT_REF_SLUG}.${CI_PIPELINE_ID}.${CI_COMMIT_SHA_SHORT}"
-  script:
-    - docker login -u "gitlab-ci-token" -p "$CI_JOB_TOKEN" $CI_REGISTRY
-    - docker build -t "$CI_REGISTRY_IMAGE/kubernetes-e2e:$KUBE_DOCKER_IMAGE_TAG" ./e2e/
-    - docker push "$CI_REGISTRY_IMAGE/kubernetes-e2e:$KUBE_DOCKER_IMAGE_TAG"
-    - echo export KUBERNETES_E2E_IMAGE="$CI_REGISTRY_IMAGE/kubernetes-e2e" > e2e.env
-    - echo export KUBERNETES_E2E_TAG="$KUBE_DOCKER_IMAGE_TAG" >> e2e.env
-  artifacts:
-    name: "${CI_JOB_NAME}.${CI_PIPELINE_ID}.${CI_JOB_ID}"
-    expire_in: 1 weeks
-    paths:
-      - e2e.env
-      
 container:
   stage: package
   variables:
