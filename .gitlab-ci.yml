@@ -101,12 +101,15 @@ container:
             JOB_STATUS="$(curl -s --header "PRIVATE-TOKEN:${TOKEN}" "https://gitlab.cncf.ci/api/v4/projects/2/pipelines/${PROJECT_PIPELINE}/jobs" | jq '.[] | select(.name=="Kubernetes-Deploy") | .status')"
             sleep 0.5
             if [ $"JOB_STATUS" == '"failed"' ]; then
-              exit 1
+                exit 1
+            elif [ $"JOB_STATUS" == '"canceled"' ]; then
+                exit 1
             else
-              done
+                continue
             fi
         done
         echo 'Cluster Ready'
+
 
         PROJECT_JOB=$(curl --header "PRIVATE-TOKEN:${TOKEN}" "https://gitlab.cncf.ci/api/v4/projects/2/pipelines/${PROJECT_PIPELINE}/jobs?scope=success" | jq '.[] | select(.name=="Kubernetes-Deploy") | .id')
         export BASE_URL=${BASE_URL:-$(echo $CI_PROJECT_URL |  cut -d'/' -f1-3)}
