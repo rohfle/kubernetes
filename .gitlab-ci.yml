@@ -5,8 +5,6 @@ stages:
   - Cross-Cloud
 
 before_script:
-  - apk update
-  - apk add bash tar rsync git curl make file
   - echo "We are only going to build for amd64 for this demo"
   - sed -i -e '/ linux\/arm/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e '/ linux\/s390/ s/^/#/' hack/lib/golang.sh 
@@ -26,6 +24,8 @@ compile:
     KUBE_VERBOSE: "0"
     FEDERATION: "false"
   script:
+    - apk update
+    - apk add bash tar rsync git curl make file
     - export KUBE_DOCKER_REGISTRY="${CI_REGISTRY_IMAGE}"
     - export KUBE_DOCKER_IMAGE_TAG="${CI_COMMIT_REF_SLUG}.${CI_COMMIT_SHA_SHORT}"
     - echo "${KUBE_DOCKER_IMAGE_TAG}"
