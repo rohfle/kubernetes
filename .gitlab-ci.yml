@@ -111,8 +111,8 @@ container:
       - kubeconfig
 
 
-# Cross-Cloud:
-#   <<: *cross-cloud
+Cross-Cloud:
+  <<: *cross-cloud
 
 
 
