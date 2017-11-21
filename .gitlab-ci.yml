@@ -1,12 +1,10 @@
 image: docker:17.05.0
 stages:
   - build
+  - package
   - release
 
 before_script:
-  - apk update
-  - apk add bash tar rsync git curl make file
-  #- docker rmi -f $(docker images -q)
   - echo "We are only going to build for amd64 for this demo"
   - sed -i -e '/ linux\/arm/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e '/ linux\/s390/ s/^/#/' hack/lib/golang.sh 
@@ -18,7 +16,7 @@ before_script:
   - sed -i -e '/ windows\/amd64/ s/^/#/' hack/lib/golang.sh 
 
 
-container:
+compile:
   stage: build
   variables:
     KUBE_DOCKER_REGISTRY: "${CI_REGISTRY_IMAGE}"
@@ -28,7 +26,35 @@ container:
     KUBE_VERBOSE: "0"
     FEDERATION: "false"
   script:
+    - apk update
+    - apk add bash tar rsync git curl make file
+    - export KUBE_DOCKER_REGISTRY="${CI_REGISTRY_IMAGE}"
+    - export KUBE_DOCKER_IMAGE_TAG="${CI_COMMIT_REF_SLUG}.${CI_COMMIT_SHA_SHORT}"
+    - echo "${KUBE_DOCKER_IMAGE_TAG}"
     - ./build/release.sh 
+    - ARCH=amd64
+        REGISTRY=${KUBE_DOCKER_REGISTRY}
+        VERSION=${KUBE_DOCKER_IMAGE_TAG}
+        make -C cluster/images/hyperkube/ build
+    - cp -a _output/dockerized/bin/linux/amd64 linux-amd64
+    - echo export KUBELET_ARTIFACT=https://gitlab.cncf.ci/kubernetes/kubernetes/-/jobs/${CI_JOB_ID}/artifacts/raw/linux-amd64/kubelet >> release.env
+  artifacts:
+    name: "${CI_JOB_NAME}.${CI_PIPELINE_ID}.${CI_JOB_ID}"
+    when: always
+    expire_in: 4 weeks
+    paths:
+      - release.env
+      - linux-amd64
+
+container:
+  stage: package
+  variables:
+    KUBE_DOCKER_REGISTRY: "${CI_REGISTRY_IMAGE}"
+    KUBE_DOCKER_IMAGE_TAG: "${CI_COMMIT_REF_SLUG}.${CI_PIPELINE_ID}.${CI_COMMIT_SHA_SHORT}"
+  script:
+    - export KUBE_DOCKER_REGISTRY="${CI_REGISTRY_IMAGE}"
+    - export KUBE_DOCKER_IMAGE_TAG="${CI_COMMIT_REF_SLUG}.${CI_COMMIT_SHA_SHORT}"
+    - echo "${KUBE_DOCKER_IMAGE_TAG}"
     - docker images | grep kubernetes/kubernetes
     - docker login -u "gitlab-ci-token" -p "$CI_JOB_TOKEN" $CI_REGISTRY
     - docker push "$CI_REGISTRY_IMAGE/hyperkube-amd64:$KUBE_DOCKER_IMAGE_TAG"
@@ -37,9 +63,7 @@ container:
     - docker push "$CI_REGISTRY_IMAGE/kube-scheduler-amd64:$KUBE_DOCKER_IMAGE_TAG"
     - docker push "$CI_REGISTRY_IMAGE/kube-proxy-amd64:$KUBE_DOCKER_IMAGE_TAG"
     - docker push "$CI_REGISTRY_IMAGE/kube-aggregator-amd64:$KUBE_DOCKER_IMAGE_TAG"
-    - cp -a _output/dockerized/bin/linux/amd64 linux-amd64
-    - echo export TF_VAR_kubelet_image_url="$CI_REGISTRY_IMAGE/hyperkube-amd64" > ci.vars
-    - echo export TF_VAR_kubelet_image_tag="$KUBE_DOCKER_IMAGE_TAG" >> ci.vars
+    - docker push "$CI_REGISTRY_IMAGE/cloud-controller-manager-amd64:$KUBE_DOCKER_IMAGE_TAG"
     - echo export KUBERNETES_IMAGE="$CI_REGISTRY_IMAGE/hyperkube-amd64" > release.env
     - echo export KUBERNETES_TAG="$KUBE_DOCKER_IMAGE_TAG" >> release.env
     - echo export KUBE_APISERVER_IMAGE="$CI_REGISTRY_IMAGE/kube-apiserver-amd64" >> release.env
@@ -52,16 +76,15 @@ container:
     - echo export KUBE_PROXY_TAG="$KUBE_DOCKER_IMAGE_TAG" >> release.env
     - echo export KUBE_AGGREGATOR_IMAGE="$CI_REGISTRY_IMAGE/kube-aggregator-amd64" >> release.env
     - echo export KUBE_AGGREGATOR_TAG="$KUBE_DOCKER_IMAGE_TAG" >> release.env
-    - echo export KUBE_BINARIES_URL=https://gitlab.cncf.ci/kubernetes/kubernetes/-/jobs/${CI_JOB_ID}/artifacts/raw/linux-amd64/ >> release.env
+    - echo export CLOUD_CONTROLLER_IMAGE="$CI_REGISTRY_IMAGE/cloud-controller-manager-amd64" >> release.env
+    - echo export CLOUD_CONTROLLER_TAG="$KUBE_DOCKER_IMAGE_TAG" >> release.env
     - cat release.env
   artifacts:
     name: "${CI_JOB_NAME}.${CI_PIPELINE_ID}.${CI_JOB_ID}"
     when: always
-    expire_in: 4 weeks
+    expire_in: 1 weeks
     paths:
-      - ci.vars
       - release.env
-      - linux-amd64
 
 build-e2e:
   stage: build
