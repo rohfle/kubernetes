@@ -49,6 +49,10 @@ compile:
     - export KUBE_DOCKER_IMAGE_TAG="${CI_COMMIT_REF_SLUG}.${CI_COMMIT_SHA_SHORT}"
     - echo "${KUBE_DOCKER_IMAGE_TAG}"
     - ./build/release.sh
+    - ARCH=amd64
+        REGISTRY=${KUBE_DOCKER_REGISTRY}
+        VERSION=${KUBE_DOCKER_IMAGE_TAG}
+        make -C cluster/images/hyperkube/ build
     - cp -a _output/dockerized/bin/linux/amd64 linux-amd64
     - echo export KUBELET_ARTIFACT=https://gitlab.cncf.ci/kubernetes/kubernetes/-/jobs/${CI_JOB_ID}/artifacts/raw/linux-amd64/kubelet >> release.env
   artifacts:
