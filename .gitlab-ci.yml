@@ -123,7 +123,7 @@ container:
 release:
   stage: release
   script:
-    - cat e2e.env
+    #- cat e2e.env
     - cat release.env
     - echo "not triggering cross-cloud pipeline"
     # - curl -X POST
@@ -136,4 +136,4 @@ release:
     paths:
       - ci.vars
       - release.env
-      - e2e.env
+      #- e2e.env
