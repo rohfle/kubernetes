@@ -14,7 +14,16 @@ before_script:
   - sed -i -e '/ darwin\/386/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e '/ windows\/386/ s/^/#/' hack/lib/golang.sh 
   - sed -i -e '/ windows\/amd64/ s/^/#/' hack/lib/golang.sh 
+  - rm -f update_dashboard
+  - wget -O update_dashboard http://gitlab.dev.cncf.ci/cncf/cross-cloud/raw/ci-stable-v0.1.0/update_dashboard || apk update && apk add bash curl && curl -o update_dashboard http://gitlab.dev.cncf.ci/cncf/cross-cloud/raw/ci-stable-v0.1.0/update_dashboard
+  - chmod +x update_dashboard
+  - bash ./update_dashboard
 
+after_script:
+  - rm -f update_dashboard
+  - wget -nv http://gitlab.dev.cncf.ci/cncf/cross-cloud/raw/ci-stable-v0.1.0/update_dashboard || apk update && apk add bash curl && curl -o update_dashboard http://gitlab.dev.cncf.ci/cncf/cross-cloud/raw/ci-stable-v0.1.0/update_dashboard
+  - chmod +x update_dashboard
+  - bash ./update_dashboard
 
 compile:
   stage: build
