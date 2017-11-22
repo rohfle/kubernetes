@@ -3,6 +3,11 @@ stages:
   - package
   - release
 
+variables:
+  DASHBOARD_STABLE_REF_NAME: "ci-v1.6.6"
+  DASHBOARD_MASTER_REF_NAME: "ci-master"
+  DASHBOARD_HEAD_REF_NAME: "$DASHBOARD_MASTER_REF_NAME"
+
 before_script:
   - echo "We are only going to build for amd64 for this demo"
   - sed -i -e '/ linux\/arm/ s/^/#/' hack/lib/golang.sh 
