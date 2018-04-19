@@ -68,8 +68,14 @@ func writePolicyToDisk(policyFile string, policy *auditv1beta1.Policy) error {
 
 // CreateDefaultAuditWebhookConfig writes the default audit webhook config to disk.
 func CreateDefaultAuditWebhookConfig(webhookConfigFile string) error {
+	// creates target folder if not already exists
+	if err := os.MkdirAll(filepath.Dir(webhookConfigFile), 0700); err != nil {
+		return fmt.Errorf("failed to create directory %q: %v", filepath.Dir(webhookConfigFile), err)
+	}
+
 	// We do not have a default, but we do have a volume mapping for this file
-	return os.OpenFile(name, os.O_RDONLY|os.O_CREATE, 0644)
+	// Creating an empty file for now
+	return os.OpenFile(webhookConfigFile, os.O_RDONLY|os.O_CREATE, 0644)
 }
 
 func writeWebhookConfigToDisk(webhookConfigFile string, policy *auditv1beta1.Policy) error {

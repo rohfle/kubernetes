@@ -340,7 +340,7 @@ func (i *Init) Run(out io.Writer) error {
 		}
 		// Verify the AuditWebhookConfigFile (verify it exists if it was passed in)
 		if i.cfg.AuditPolicyConfiguration.WebhookConfigPath != "" {
-			// TODO(chuckha) ensure passed in audit webhook config is valid so users don't have to find the error in the api server log.
+			// TODO(hh) ensure passed in audit webhook config is valid so users don't have to find the error in the api server log.
 			if _, err := os.Stat(i.cfg.AuditPolicyConfiguration.WebhookConfigPath); err != nil {
 				return fmt.Errorf("error getting file info for audit webhook config file %q [%v]", i.cfg.AuditPolicyConfiguration.WebhookConfigPath, err)
 			}
