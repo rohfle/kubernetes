@@ -65,3 +65,31 @@ func writePolicyToDisk(policyFile string, policy *auditv1beta1.Policy) error {
 
 	return nil
 }
+
+// CreateDefaultAuditWebhookConfig writes the default audit webhook config to disk.
+func CreateDefaultAuditWebhookConfig(webhookConfigFile string) error {
+	// We do not have a default, but we do have a volume mapping for this file
+	return os.OpenFile(name, os.O_RDONLY|os.O_CREATE, 0644)
+}
+
+func writeWebhookConfigToDisk(webhookConfigFile string, policy *auditv1beta1.Policy) error {
+	// creates target folder if not already exists
+	if err := os.MkdirAll(filepath.Dir(webhookConfigFile), 0700); err != nil {
+		return fmt.Errorf("failed to create directory %q: %v", filepath.Dir(webhookConfigFile), err)
+	}
+
+	// Registers auditv1beta1 with the runtime Scheme
+	auditv1beta1.AddToScheme(scheme.Scheme)
+
+	// writes the policy to disk
+	serialized, err := util.MarshalToYaml(policy, auditv1beta1.SchemeGroupVersion)
+	if err != nil {
+		return fmt.Errorf("failed to marshal audit webhook config to YAML: %v", err)
+	}
+
+	if err := ioutil.WriteFile(webhookConfigFile, serialized, 0600); err != nil {
+		return fmt.Errorf("failed to write audit webhook config to %v: %v", webhookConfigFile, err)
+	}
+
+	return nil
+}

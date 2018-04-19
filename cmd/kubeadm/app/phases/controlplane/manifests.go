@@ -255,6 +255,12 @@ func getAPIServerCommand(cfg *kubeadmapi.MasterConfiguration, k8sVersion *versio
 		} else {
 			command = append(command, fmt.Sprintf("--audit-log-maxage=%d", *cfg.AuditPolicyConfiguration.LogMaxAge))
 		}
+		if cfg.AuditPolicyConfiguration.WebhookConfigPath != nil {
+			command = append(command, "--audit-webhook-config-file="+kubeadmconstants.GetStaticPodAuditWebhookConfigFile())
+		}
+		if cfg.AuditPolicyConfiguration.WebhookInitialBackoff != nil {
+			command = append(command, fmt.Sprintf("--audit-webhook-initial-backoff=%d", *cfg.AuditPolicyConfiguration.WebhookInitialBackoff))
+		}
 	}
 
 	return command
