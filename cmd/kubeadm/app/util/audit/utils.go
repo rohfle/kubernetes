@@ -26,6 +26,7 @@ import (
 	auditv1beta1 "k8s.io/apiserver/pkg/apis/audit/v1beta1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/kubernetes/cmd/kubeadm/app/util"
+	"k8s.io/client-go/tools/clientcmd/api/v1"
 )
 
 // CreateDefaultAuditLogPolicy writes the default audit log policy to disk.
@@ -68,27 +69,23 @@ func writePolicyToDisk(policyFile string, policy *auditv1beta1.Policy) error {
 
 // CreateDefaultAuditWebhookConfig writes the default audit webhook config to disk.
 func CreateDefaultAuditWebhookConfig(webhookConfigFile string) error {
-	// creates target folder if not already exists
-	if err := os.MkdirAll(filepath.Dir(webhookConfigFile), 0700); err != nil {
-		return fmt.Errorf("failed to create directory %q: %v", filepath.Dir(webhookConfigFile), err)
+	webhookConfig := v1.Config{
+		Clusters: []v1.NamedCluster{
+			{Cluster: v1.Cluster{Server: "127.0.0.1", InsecureSkipTLSVerify: true}},
+		},
 	}
-
-	// We do not have a default, but we do have a volume mapping for this file
-	// Creating an empty file for now
-	return os.OpenFile(webhookConfigFile, os.O_RDONLY|os.O_CREATE, 0644)
+	return writeWebhookConfigToDisk(webhookConfigFile, &webhookConfig)
 }
 
-func writeWebhookConfigToDisk(webhookConfigFile string, policy *auditv1beta1.Policy) error {
+func writeWebhookConfigToDisk(webhookConfigFile string, webhookConfig *v1.Config) error {
+	// Audit Webhook config's are just kube conection configs
 	// creates target folder if not already exists
 	if err := os.MkdirAll(filepath.Dir(webhookConfigFile), 0700); err != nil {
 		return fmt.Errorf("failed to create directory %q: %v", filepath.Dir(webhookConfigFile), err)
 	}
 
-	// Registers auditv1beta1 with the runtime Scheme
-	auditv1beta1.AddToScheme(scheme.Scheme)
-
-	// writes the policy to disk
-	serialized, err := util.MarshalToYaml(policy, auditv1beta1.SchemeGroupVersion)
+	// writes the webhookConfigFile to disk
+	serialized, err := util.MarshalToYaml(webhookConfig, v1.SchemeGroupVersion)
 	if err != nil {
 		return fmt.Errorf("failed to marshal audit webhook config to YAML: %v", err)
 	}
