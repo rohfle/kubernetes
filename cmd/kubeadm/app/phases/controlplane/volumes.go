@@ -62,7 +62,7 @@ func getHostPathVolumesForTheControlPlane(cfg *kubeadmapi.MasterConfiguration) c
 		mounts.NewHostPathMount(kubeadmconstants.KubeAPIServer, kubeadmconstants.KubeAuditPolicyVolumeName, cfg.AuditPolicyConfiguration.Path, kubeadmconstants.GetStaticPodAuditPolicyFile(), true, &hostPathFile)
 		// Read-only mount for the audit webhook config file.
 		// TODO(hh) If we aren't provided a webhook config, it might be useful to forgo this mount
-		mounts.NewHostPathMount(kubeadmconstants.KubeAPIServer, kubeadmconstants.KubeAuditPolicyVolumeName, cfg.AuditPolicyConfiguration.Path, kubeadmconstants.GetStaticPodAuditWebhookConfigFile(), true, &hostPathFile)
+		mounts.NewHostPathMount(kubeadmconstants.KubeAPIServer, kubeadmconstants.KubeAuditWebhookConfigVolumeName, cfg.AuditPolicyConfiguration.WebhookConfigPath, kubeadmconstants.GetStaticPodAuditWebhookConfigFile(), true, &hostPathFile)
 		// Write mount for the audit logs.
 		mounts.NewHostPathMount(kubeadmconstants.KubeAPIServer, kubeadmconstants.KubeAuditPolicyLogVolumeName, cfg.AuditPolicyConfiguration.LogDir, kubeadmconstants.StaticPodAuditPolicyLogDir, false, &hostPathDirectoryOrCreate)
 	}

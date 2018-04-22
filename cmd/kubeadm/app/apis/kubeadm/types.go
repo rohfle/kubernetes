@@ -308,7 +308,7 @@ type AuditPolicyConfiguration struct {
 	// WebhookConfigPath is the local path to webhook policy.
 	WebhookConfigPath string
 	// WebhookInitialBackoff is the time to wait (in seconds) before retrying the first failed request.
-	WebhookInitialBackoff *int32 //defaults to 10s if not provided
+	WebhookInitialBackoff string //defaults to 10s if not provided
 	//TODO(chuckha) add other options for audit policy.
 }
 

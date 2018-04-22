@@ -69,6 +69,7 @@ func writePolicyToDisk(policyFile string, policy *auditv1beta1.Policy) error {
 
 // CreateDefaultAuditWebhookConfig writes the default audit webhook config to disk.
 func CreateDefaultAuditWebhookConfig(webhookConfigFile string) error {
+	return nil // TODO: confirm that default file is not needed
 	webhookConfig := v1.Config{
 		Clusters: []v1.NamedCluster{
 			{Cluster: v1.Cluster{Server: "127.0.0.1", InsecureSkipTLSVerify: true}},
