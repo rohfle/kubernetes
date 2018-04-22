@@ -258,8 +258,8 @@ func getAPIServerCommand(cfg *kubeadmapi.MasterConfiguration, k8sVersion *versio
 		if cfg.AuditPolicyConfiguration.WebhookConfigPath != nil {
 			command = append(command, "--audit-webhook-config-file="+kubeadmconstants.GetStaticPodAuditWebhookConfigFile())
 		}
-		if cfg.AuditPolicyConfiguration.WebhookInitialBackoff != nil {
 			command = append(command, fmt.Sprintf("--audit-webhook-initial-backoff=%d", *cfg.AuditPolicyConfiguration.WebhookInitialBackoff))
+		if cfg.AuditPolicyConfiguration.WebhookInitialBackoff != "" {
 		}
 	}
 

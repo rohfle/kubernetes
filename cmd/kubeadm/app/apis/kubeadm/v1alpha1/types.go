@@ -286,6 +286,6 @@ type AuditPolicyConfiguration struct {
 	// WebhookConfigPath is the local path to webhook policy.
 	WebhookConfigPath string `json:"webhookConfigPath"`
 	// WebhookInitialBackoff is the time to wait (in seconds) before retrying the first failed request.
-	WebhookInitialBackoff *int32 `json:"webhookInitialBackoff,omitempty"`
+	WebhookInitialBackoff string `json:"webhookInitialBackoff,omitempty"`
 	//TODO(chuckha) add other options for audit policy.
 }
