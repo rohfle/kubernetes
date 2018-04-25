@@ -344,11 +344,6 @@ func (i *Init) Run(out io.Writer) error {
 			if _, err := os.Stat(i.cfg.AuditPolicyConfiguration.WebhookConfigPath); err != nil {
 				return fmt.Errorf("error getting file info for audit webhook config file %q [%v]", i.cfg.AuditPolicyConfiguration.WebhookConfigPath, err)
 			}
-		} else {
-			i.cfg.AuditPolicyConfiguration.WebhookConfigPath = filepath.Join(kubeConfigDir, kubeadmconstants.AuditPolicyDir, kubeadmconstants.AuditWebhookConfigFile)
-			if err := auditutil.CreateDefaultAuditWebhookConfig(i.cfg.AuditPolicyConfiguration.WebhookConfigPath); err != nil {
-				return fmt.Errorf("error creating default audit webhook config file %q [%v]", i.cfg.AuditPolicyConfiguration.WebhookConfigPath, err)
-			}
 		}
 	}
 
