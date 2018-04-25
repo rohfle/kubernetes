@@ -122,7 +122,7 @@ func Funcs(codecs runtimeserializer.CodecFactory) []interface{} {
 				LogDir:                "/foo",
 				LogMaxAge:             utilpointer.Int32Ptr(0),
 				WebhookConfigPath:     "foo",
-				WebhookInitialBackoff: utilpointer.Int32Ptr(0),
+				WebhookInitialBackoff: "30s",
 			}
 		},
 		func(obj *kubeadm.NodeConfiguration, c fuzz.Continue) {

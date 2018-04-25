@@ -354,7 +354,7 @@ func TestGetAPIServerCommand(t *testing.T) {
 					LogDir:                "/foo/baz",
 					LogMaxAge:             utilpointer.Int32Ptr(10),
 					WebhookConfigPath:     "/foo/bar/baz",
-					WebhookInitialBackoff: utilpointer.Int32Ptr(30),
+					WebhookInitialBackoff: "30s",
 				}, // ignored without the feature gate
 			},
 			expected: []string{
@@ -586,7 +586,7 @@ func TestGetAPIServerCommand(t *testing.T) {
 				AuditPolicyConfiguration: kubeadmapi.AuditPolicyConfiguration{
 					LogMaxAge:             utilpointer.Int32Ptr(0),
 					WebhookConfigPath:     "/foo/bar/baz",
-					WebhookInitialBackoff: utilpointer.Int32Ptr(30),
+					WebhookInitialBackoff: "30s",
 				},
 			},
 			expected: []string{
@@ -622,7 +622,7 @@ func TestGetAPIServerCommand(t *testing.T) {
 				"--audit-log-path=/var/log/kubernetes/audit/audit.log",
 				"--audit-log-maxage=0",
 				"--audit-webhook-config-file=/etc/kubernetes/audit/webhook.yaml",
-				"--audit-webhook-initial-backoff=30",
+				"--audit-webhook-initial-backoff=30s",
 			},
 		},
 		{
